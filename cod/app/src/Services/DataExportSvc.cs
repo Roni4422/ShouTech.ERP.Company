@@ -537,7 +537,13 @@ public static class DataExportSvc
         var companyColumn = columns.FirstOrDefault(x =>
             x.Equals("company_id", StringComparison.OrdinalIgnoreCase) ||
             x.Equals("companyid", StringComparison.OrdinalIgnoreCase));
-        if (companyColumn != null && companyId == null)
+        // Legacy tenant tables store the company CODE in company_id; newer tables
+        // store the internal companies.company_id. Keep this mapping explicit so an
+        // import cannot silently write an internal numeric ID into a text code column.
+        var companyScopeValue = IsCompanyCodeScopedTable(option.TableName)
+            ? companyCode.Trim()
+            : companyId;
+        if (companyColumn != null && companyScopeValue == null)
             throw new InvalidOperationException("The active company could not be matched to the current database.");
         if (companyColumn == null && !IsCompanyIndependent(option.TableName))
             throw new InvalidOperationException("This dataset cannot be safely restricted to the active company, so it was not imported.");
@@ -573,7 +579,7 @@ public static class DataExportSvc
                 }
 
                 if (companyColumn != null)
-                    values[companyColumn] = companyId!;
+                    values[companyColumn] = companyScopeValue!;
 
                 try
                 {
@@ -597,7 +603,7 @@ public static class DataExportSvc
                 // Product/material tables prefer soft-delete (is_deleted) when the column exists.
                 deleted = await DeleteRowsNotInImportAsync(
                     connection, transaction, option.TableName, keyColumns,
-                    companyColumn, companyId, importedKeys, ct);
+                    companyColumn, companyScopeValue, importedKeys, ct);
                 LogInfo($"Replace cleanup | key={option.Key} | table={option.TableName} | upserted={processed} | removed={deleted} | company={companyCode}");
             }
 
@@ -1096,6 +1102,26 @@ public static class DataExportSvc
         while (await reader.ReadAsync(ct))
             names.Add(reader.GetString(0));
         return names;
+    }
+
+    private static bool IsCompanyCodeScopedTable(string tableName)
+    {
+        // Must stay aligned with the legacy company_id convention in RecycleBinSvc.
+        // Unknown tables default to internal-ID mapping (fail-closed when unresolved).
+        return tableName.Equals("sales_documents", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("purchase_documents", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("materials", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("material_groups", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("customers", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("suppliers", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("accounts", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("chart_of_accounts", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("branches", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("warehouses", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("brands", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("product_categories", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("units_of_measure", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("employees", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<object?> FindCompanyIdAsync(DbConnection connection, string companyCode, CancellationToken ct)
