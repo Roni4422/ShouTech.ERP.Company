@@ -533,16 +533,17 @@ public static class DataExportSvc
         if (keyColumns.Count == 0 || keyColumns.Any(key => !identity.Fields.Contains(key, StringComparer.OrdinalIgnoreCase)))
             throw new InvalidDataException("The workbook does not contain the complete primary key required for a safe import.");
 
-        var companyId = await FindCompanyIdAsync(connection, companyCode, ct);
+        // Legacy tenant tables store the active company CODE directly in company_id.
+        // Do not require a row in the global companies registry for these tables:
+        // some valid tenant databases have a registry table that is absent or not
+        // populated, while the legacy table still uses the company code as its scope.
+        var companyCodeScoped = IsCompanyCodeScopedTable(option.TableName);
+        var companyScopeValue = companyCodeScoped
+            ? companyCode.Trim()
+            : await FindCompanyIdAsync(connection, companyCode, ct);
         var companyColumn = columns.FirstOrDefault(x =>
             x.Equals("company_id", StringComparison.OrdinalIgnoreCase) ||
             x.Equals("companyid", StringComparison.OrdinalIgnoreCase));
-        // Legacy tenant tables store the company CODE in company_id; newer tables
-        // store the internal companies.company_id. Keep this mapping explicit so an
-        // import cannot silently write an internal numeric ID into a text code column.
-        var companyScopeValue = IsCompanyCodeScopedTable(option.TableName)
-            ? companyCode.Trim()
-            : companyId;
         if (companyColumn != null && companyScopeValue == null)
             throw new InvalidOperationException("The active company could not be matched to the current database.");
         if (companyColumn == null && !IsCompanyIndependent(option.TableName))
