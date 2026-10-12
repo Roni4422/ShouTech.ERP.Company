@@ -606,9 +606,23 @@ public partial class DatWin : Window
                         Title, MessageBoxButton.YesNo, MessageBoxImage.Warning);
                     if (confirmCompany != MessageBoxResult.Yes) return;
                 }
+                var replaceMode = ImportReplaceRadio?.IsChecked == true;
+                if (replaceMode && steiOption.Key == "$FullPackage")
+                {
+                    MessageBox.Show(L("FullPackageReplaceUnsupported", "Replace mode applies only to one verified dataset package, not to full-database packages. Select update/insert mode instead."),
+                        Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                if (replaceMode && IsProtectedSteiDataset(steiOption.Key))
+                {
+                    MessageBox.Show(L("AccountingReplaceBlocked", "Replace mode is prohibited for posted accounting documents, vouchers, stock movements, and valuation history. Their original records and audit trail must be preserved."),
+                        Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
                 var preflight = steiOption.Key == "$FullPackage"
                     ? await SteiSvc.ImportAsync(path, password, simulation: true, progress: progress, ct: CancellationToken.None)
-                    : await DataExportSvc.ImportDatasetPackageAsync(path, password, steiOption, simulation: true, progress: progress, ct: CancellationToken.None);
+                    : await DataExportSvc.ImportDatasetPackageAsync(path, password, steiOption, simulation: true, progress: progress, ct: CancellationToken.None, replaceMode: replaceMode);
                 if (!preflight.Success)
                 {
                     ShowResult(preflight, path, false);
@@ -631,26 +645,22 @@ public partial class DatWin : Window
                 }
                 else
                 {
-                    if (ImportReplaceRadio?.IsChecked == true)
-                    {
-                        MessageBox.Show(
-                            L("SteiReplaceUnavailable", "Replace / move-missing-rows-to-bin is currently available only for ShouTech Excel imports. For encrypted STEI packages, reference/master data is updated or inserted, while accounting and inventory history datasets are insert-only to preserve the audit trail."),
-                            Title, MessageBoxButton.OK, MessageBoxImage.Information);
-                        return;
-                    }
-
                     var actor = GetCurrentUserName();
                     var company = GetCurrentCompanyCode();
+                    var modeName = replaceMode ? "ReplaceToBin" : (IsProtectedSteiDataset(steiOption.Key) ? "InsertOnly" : "Upsert");
+                    var confirmText = replaceMode
+                        ? $"Validation passed for '{steiOption.DisplayName}'. Update/insert {preflight.Rows} rows and move missing active rows for the current company to the recycle bin (soft-delete)?"
+                        : $"Validation passed for '{steiOption.DisplayName}'. Import {preflight.Rows} rows into the active company? Reference data will be updated/inserted; posted accounting and inventory-history datasets are insert-only.";
+                    var confirmDataset = MessageBox.Show(
+                        L("DatasetImportConfirm", confirmText),
+                        Title, MessageBoxButton.YesNo, replaceMode ? MessageBoxImage.Warning : MessageBoxImage.Question);
+                    if (confirmDataset != MessageBoxResult.Yes) return;
                     var startedAt = DateTime.Now;
                     LogOp("ImportSTEI.Dataset.Start",
-                        $"key={steiOption.Key} | mode={(IsProtectedSteiDataset(steiOption.Key) ? "InsertOnly" : "Upsert")} | user={actor} | company={company} | at={startedAt:yyyy-MM-dd HH:mm:ss} | file={path}");
-                    var confirmDataset = MessageBox.Show(
-                        L("DatasetImportConfirm", $"Validation passed for '{steiOption.DisplayName}'. Import {preflight.Rows} rows into the active company? Reference data will be updated/inserted; posted accounting and inventory-history datasets are insert-only."),
-                        Title, MessageBoxButton.YesNo, MessageBoxImage.Question);
-                    if (confirmDataset != MessageBoxResult.Yes) return;
-                    result = await DataExportSvc.ImportDatasetPackageAsync(path, password, steiOption, simulation: false, progress: progress, ct: CancellationToken.None);
+                        $"key={steiOption.Key} | mode={modeName} | user={actor} | company={company} | at={startedAt:yyyy-MM-dd HH:mm:ss} | file={path}");
+                    result = await DataExportSvc.ImportDatasetPackageAsync(path, password, steiOption, simulation: false, progress: progress, ct: CancellationToken.None, replaceMode: replaceMode);
                     LogOp("ImportSTEI.Dataset",
-                        $"key={steiOption.Key} | mode={(IsProtectedSteiDataset(steiOption.Key) ? "InsertOnly" : "Upsert")} | success={result.Success} | rows={result.Rows} | failedRows={result.FailedRows} | failedTables={result.FailedTables} | user={actor} | company={company} | at={DateTime.Now:yyyy-MM-dd HH:mm:ss} | file={path}");
+                        $"key={steiOption.Key} | mode={modeName} | success={result.Success} | rows={result.Rows} | failedRows={result.FailedRows} | failedTables={result.FailedTables} | user={actor} | company={company} | at={DateTime.Now:yyyy-MM-dd HH:mm:ss} | file={path}");
                 }
                 ShowResult(result, path, false);
             }
