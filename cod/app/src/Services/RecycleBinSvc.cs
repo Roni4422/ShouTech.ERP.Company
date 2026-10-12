@@ -117,12 +117,47 @@ public static class RecycleBinSvc
         var companyId = await FindCompanyIdAsync(connection, companyCode, cancellationToken).ConfigureAwait(false);
         var results = new List<RecycleBinItem>();
 
-        foreach (var definition in Catalog)
+        var definitions = Catalog
+            .Where(definition => existingTables.Contains(definition.TableName))
+            .ToDictionary(definition => definition.TableName, StringComparer.OrdinalIgnoreCase);
+
+        // Automatically discover additional company-scoped tables using the standard soft-delete flag.
+        foreach (var tableName in existingTables)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!existingTables.Contains(definition.TableName))
+            if (definitions.ContainsKey(tableName) || !SafeIdentifier.IsMatch(tableName))
                 continue;
+            try
+            {
+                var columns = await GetColumnNamesAsync(connection, tableName, cancellationToken).ConfigureAwait(false);
+                if (FindColumn(columns, "is_deleted") is null)
+                    continue;
+                var primaryKey = InferPrimaryKey(tableName, columns);
+                if (primaryKey is null)
+                    continue;
+                var companyColumn = FindColumn(columns, "company_id") ?? FindColumn(columns, "companyid");
+                if (companyColumn is null)
+                    continue;
 
+                var isInvoice = tableName.Equals("sales_documents", StringComparison.OrdinalIgnoreCase)
+                    || tableName.Equals("purchase_documents", StringComparison.OrdinalIgnoreCase);
+                definitions[tableName] = new BinTableDefinition(
+                    tableName,
+                    HumanizeTableName(tableName),
+                    ["name_ar", "name", "description", "doc_no", "voucher_no", "code", "number", "title", "id"],
+                    [primaryKey],
+                    CompanyIdIsCode: isInvoice,
+                    DraftOnly: isInvoice);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                LogWarning($"Dynamic discovery skipped table '{tableName}': {ex.Message}");
+            }
+        }
+
+        foreach (var definition in definitions.Values)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 var page = await ListTableAsync(
@@ -171,7 +206,12 @@ public static class RecycleBinSvc
             var deletedAtColumn = FindColumn(columns, "deleted_at");
             var isActiveColumn = FindColumn(columns, "is_active");
             var companyColumn = FindColumn(columns, "company_id") ?? FindColumn(columns, "companyid");
-            var definition = Catalog.First(entry => entry.TableName.Equals(item.TableName, StringComparison.OrdinalIgnoreCase));
+            var definition = Catalog.FirstOrDefault(entry => entry.TableName.Equals(item.TableName, StringComparison.OrdinalIgnoreCase))
+                ?? new BinTableDefinition(item.TableName, HumanizeTableName(item.TableName), [], [item.PrimaryKeyColumn],
+                    CompanyIdIsCode: item.TableName.Equals("sales_documents", StringComparison.OrdinalIgnoreCase)
+                        || item.TableName.Equals("purchase_documents", StringComparison.OrdinalIgnoreCase),
+                    DraftOnly: item.TableName.Equals("sales_documents", StringComparison.OrdinalIgnoreCase)
+                        || item.TableName.Equals("purchase_documents", StringComparison.OrdinalIgnoreCase));
             var statusColumn = definition.DraftOnly ? FindColumn(columns, "status") : null;
             if (definition.DraftOnly && statusColumn is null)
                 return Failed(item, "Draft status is unavailable; this document cannot be restored from the bin.");
@@ -256,7 +296,12 @@ public static class RecycleBinSvc
                 .ConfigureAwait(false);
             var softDeleteColumn = FindColumn(columns, "is_deleted");
             var companyColumn = FindColumn(columns, "company_id") ?? FindColumn(columns, "companyid");
-            var definition = Catalog.First(entry => entry.TableName.Equals(item.TableName, StringComparison.OrdinalIgnoreCase));
+            var definition = Catalog.FirstOrDefault(entry => entry.TableName.Equals(item.TableName, StringComparison.OrdinalIgnoreCase))
+                ?? new BinTableDefinition(item.TableName, HumanizeTableName(item.TableName), [], [item.PrimaryKeyColumn],
+                    CompanyIdIsCode: item.TableName.Equals("sales_documents", StringComparison.OrdinalIgnoreCase)
+                        || item.TableName.Equals("purchase_documents", StringComparison.OrdinalIgnoreCase),
+                    DraftOnly: item.TableName.Equals("sales_documents", StringComparison.OrdinalIgnoreCase)
+                        || item.TableName.Equals("purchase_documents", StringComparison.OrdinalIgnoreCase));
             var statusColumn = definition.DraftOnly ? FindColumn(columns, "status") : null;
             if (definition.DraftOnly && statusColumn is null)
                 return Failed(item, "Draft status is unavailable; permanent deletion was blocked.");
@@ -400,16 +445,26 @@ public static class RecycleBinSvc
 
     private static void ValidateCatalogItem(RecycleBinItem item)
     {
-        if (!Catalog.Any(entry =>
-                entry.TableName.Equals(item.TableName, StringComparison.OrdinalIgnoreCase)))
-        {
-            throw new InvalidOperationException(
-                $"Table '{item.TableName}' is not allowed in the recycle bin catalog.");
-        }
-
         if (!SafeIdentifier.IsMatch(item.TableName) || !SafeIdentifier.IsMatch(item.PrimaryKeyColumn))
             throw new InvalidOperationException("Invalid identifier in recycle bin item.");
     }
+
+    private static string? InferPrimaryKey(string tableName, IReadOnlyList<string> columns)
+    {
+        var singular = tableName.EndsWith("ies", StringComparison.OrdinalIgnoreCase)
+            ? tableName[..^3] + "y"
+            : tableName.EndsWith("s", StringComparison.OrdinalIgnoreCase) ? tableName[..^1] : tableName;
+        foreach (var candidate in new[] { singular + "_id", tableName.TrimEnd('_') + "_id", "id", "doc_id", "voucher_id" })
+        {
+            var found = FindColumn(columns, candidate);
+            if (found is not null)
+                return found;
+        }
+        return columns.FirstOrDefault(column => column.EndsWith("_id", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string HumanizeTableName(string tableName)
+        => CultureInfo.InvariantCulture.TextInfo.ToTitleCase(Regex.Replace(tableName, "_+", " ").Trim());
 
     private static string ResolveExistingColumn(IReadOnlyList<string> columns, string requested)
     {
