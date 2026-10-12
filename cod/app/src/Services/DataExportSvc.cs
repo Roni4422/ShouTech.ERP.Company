@@ -452,7 +452,8 @@ public static class DataExportSvc
         DataExportOption option,
         bool simulation = false,
         IProgress<(long done, long total)>? progress = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool replaceMode = false)
     {
         ArgumentNullException.ThrowIfNull(option);
         if (option.IsSystemInfo || !Catalog.Any(x => x.Key == option.Key && x.Filter == option.Filter &&
@@ -463,7 +464,7 @@ public static class DataExportSvc
         if (!string.Equals(actualFileName, expectedFileName, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"This package must be named '{expectedFileName}.stei' for the selected dataset. The file name is an additional validation check; internal package metadata is also verified.");
         return SteiSvc.ImportDatasetAsync(
-            path, password, option.Key, option.TableName, simulation, progress, ct);
+            path, password, option.Key, option.TableName, simulation, progress, ct, replaceMode);
     }
 
     public static string GetDatasetPackageFileName(DataExportOption option)
