@@ -55,10 +55,13 @@
                                Text="Example: export materials, delete some cards in Excel, then import. Upsert keeps them in DB; wipe-to-bin moves missing cards to the recycle bin so you can restore them later."/>
                 </StackPanel>
                 <Grid x:Name="ImportPasswordGrid" Margin="8,7,8,0">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <TextBlock x:Name="ImportPasswordLabel" Grid.Column="0" Text="Package password" VerticalAlignment="Center" Margin="0,0,8,0"/>
                     <PasswordBox x:Name="ImportPasswordBox" Grid.Column="1" Style="{DynamicResource VisuPasswordBoxStyle}" Height="28" Padding="7,4"/>
+                    <Button x:Name="ReadPackageInfoButton" Grid.Column="2" Style="{DynamicResource VisuSecondaryButtonStyle}" Content="Read file info" Margin="8,0,0,0" Padding="10,4" Click="ReadPackageInfo_Click"/>
                 </Grid>
+                <TextBlock x:Name="ImportPackageInfoLabel" Margin="8,8,8,3" FontWeight="SemiBold" Text="Encrypted package details"/>
+                <TextBox x:Name="ImportPackageInfoBox" Margin="8,0,8,0" Height="92" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="7" BorderBrush="{DynamicResource BorderBrush}" Background="{DynamicResource BackgroundBrush}" Text="Choose a .stei file and enter its password, then read package details."/>
                 </StackPanel>
             </TabItem>
             <TabItem x:Name="ExportTab" Header="Export Data">
