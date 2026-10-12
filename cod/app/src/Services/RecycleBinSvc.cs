@@ -187,6 +187,7 @@ public static class RecycleBinSvc
 
             var deletedAtColumn = FindColumn(columns, "deleted_at");
             var deletedByColumn = FindColumn(columns, "deleted_by");
+            var softDeleteIsBoolean = await IsBooleanColumnAsync(connection, item.TableName, softDeleteColumn, cancellationToken).ConfigureAwait(false);
             var companyColumn = FindColumn(columns, "company_id") ?? FindColumn(columns, "companyid");
             var definition = Catalog.FirstOrDefault(entry => entry.TableName.Equals(item.TableName, StringComparison.OrdinalIgnoreCase))
                 ?? new BinTableDefinition(item.TableName, HumanizeTableName(item.TableName), [], [item.PrimaryKeyColumn],
@@ -207,7 +208,8 @@ public static class RecycleBinSvc
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
-            var falseLiteral = DatabaseRuntime.IsPostgreSql() ? "FALSE" : "0";
+            var falseLiteral = softDeleteIsBoolean ? "FALSE" : "0";
+            var trueLiteral = softDeleteIsBoolean ? "TRUE" : "1";
             var assignments = new List<string> { $"{Quote(softDeleteColumn)} = {falseLiteral}" };
             if (deletedAtColumn is not null)
                 assignments.Add($"{Quote(deletedAtColumn)} = NULL");
@@ -219,7 +221,7 @@ public static class RecycleBinSvc
             var predicates = new List<string>
             {
                 $"{Quote(primaryKeyColumn)} = @primaryKey",
-                $"{Quote(softDeleteColumn)} = {(DatabaseRuntime.IsPostgreSql() ? "TRUE" : "1")}"
+                $"{Quote(softDeleteColumn)} = {trueLiteral}"
             };
             if (companyColumn is not null)
             {
@@ -292,6 +294,7 @@ public static class RecycleBinSvc
             if (softDeleteColumn is null)
                 return Failed(item, "Permanent deletion is allowed only for a soft-deleted row in the recycle bin.");
             var companyColumn = FindColumn(columns, "company_id") ?? FindColumn(columns, "companyid");
+            var softDeleteIsBoolean = softDeleteColumn is not null && await IsBooleanColumnAsync(connection, item.TableName, softDeleteColumn, cancellationToken).ConfigureAwait(false);
             var definition = Catalog.FirstOrDefault(entry => entry.TableName.Equals(item.TableName, StringComparison.OrdinalIgnoreCase))
                 ?? new BinTableDefinition(item.TableName, HumanizeTableName(item.TableName), [], [item.PrimaryKeyColumn],
                     CompanyIdIsCode: item.TableName.Equals("sales_documents", StringComparison.OrdinalIgnoreCase)
@@ -314,7 +317,7 @@ public static class RecycleBinSvc
             var predicates = new List<string>
             {
                 $"{Quote(primaryKeyColumn)} = @primaryKey",
-                $"{Quote(softDeleteColumn)} = {(DatabaseRuntime.IsPostgreSql() ? "TRUE" : "1")}",
+                $"{Quote(softDeleteColumn)} = {(softDeleteIsBoolean ? "TRUE" : "1")}",
                 $"{Quote(companyColumn)} = @companyValue"
             };
             AddParameter(command, "@companyValue", companyValue);
@@ -382,6 +385,7 @@ public static class RecycleBinSvc
 
         var deletedAtColumn = FindColumn(columns, "deleted_at");
         var deletedByColumn = FindColumn(columns, "deleted_by");
+        var softDeleteIsBoolean = await IsBooleanColumnAsync(connection, definition.TableName, softDeleteColumn, cancellationToken).ConfigureAwait(false);
 
         await using var command = connection.CreateCommand();
         var selectList = new List<string> { Quote(primaryKeyColumn), Quote(labelColumn) };
@@ -392,7 +396,7 @@ public static class RecycleBinSvc
 
         var predicates = new List<string>
         {
-            $"{Quote(softDeleteColumn)} = {(DatabaseRuntime.IsPostgreSql() ? "TRUE" : "1")}"
+            $"{Quote(softDeleteColumn)} = {(softDeleteIsBoolean ? "TRUE" : "1")}"
         };
         predicates.Add($"{Quote(companyColumn)} = @companyId");
         AddParameter(command, "@companyId", companyValue);
@@ -833,6 +837,39 @@ public static class RecycleBinSvc
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             names.Add(reader.GetString(0));
         return names;
+    }
+
+    private static async Task<bool> IsBooleanColumnAsync(
+        DbConnection connection, string tableName, string columnName, CancellationToken cancellationToken)
+    {
+        if (!SafeIdentifier.IsMatch(tableName) || !SafeIdentifier.IsMatch(columnName))
+            throw new ArgumentException("Unsafe schema identifier.");
+
+        await using var command = connection.CreateCommand();
+        if (DatabaseRuntime.IsPostgreSql())
+        {
+            command.CommandText = """
+                SELECT data_type = 'boolean'
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = @tableName AND column_name = @columnName
+                LIMIT 1;
+                """;
+            AddParameter(command, "@tableName", tableName);
+            AddParameter(command, "@columnName", columnName);
+            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            return result is bool isBoolean && isBoolean;
+        }
+
+        command.CommandText = $"PRAGMA table_info({Quote(tableName)})";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (!string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+                continue;
+            var declaredType = reader.IsDBNull(2) ? string.Empty : reader.GetString(2);
+            return declaredType.Contains("BOOL", StringComparison.OrdinalIgnoreCase);
+        }
+        return false;
     }
 
     private static async Task<IReadOnlyList<string>> GetColumnNamesAsync(
