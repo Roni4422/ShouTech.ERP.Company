@@ -35,6 +35,7 @@ public sealed class InvoiceWin : BaseWin
     private readonly DataGrid _grid = new();
     private readonly Button _btnSave = new();
     private readonly Button _btnPost = new();
+    private readonly Button _btnReverse = new();
     private readonly Button _btnPrint = new();
     private readonly Button _btnPdf = new();
     private readonly Button _btnAddLine = new();
@@ -80,6 +81,9 @@ public sealed class InvoiceWin : BaseWin
         var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 5) };
         StyleButton(_btnSave, "Common.Save");
         StyleButton(_btnPost, "Invoice.Post");
+        StyleButton(_btnReverse, "Invoice.Reverse");
+        _btnReverse.IsEnabled = false;
+        _btnReverse.Click += (_, _) => ReverseCurrentDocument();
         StyleButton(_btnPrint, "Invoice.Print");
         StyleButton(_btnPdf, "Invoice.Pdf");
         StyleButton(_btnAddLine, "Invoice.AddLine");
@@ -99,7 +103,7 @@ public sealed class InvoiceWin : BaseWin
             if (_grid.SelectedItem is LineVm line) { _lines.Remove(line); RefreshTotals(); }
         };
         _btnFindMaterial.Click += (_, _) => PickMaterial();
-        foreach (var b in new[] { _btnSave, _btnPost, _btnPrint, _btnPdf, _btnAddLine, _btnRemoveLine, _btnFindMaterial })
+        foreach (var b in new[] { _btnSave, _btnPost, _btnReverse, _btnPrint, _btnPdf, _btnAddLine, _btnRemoveLine, _btnFindMaterial })
             toolbar.Children.Add(b);
         DockPanel.SetDock(toolbar, Dock.Top);
         root.Children.Add(toolbar);
@@ -302,6 +306,7 @@ public sealed class InvoiceWin : BaseWin
             InvDocKind.Quotation => "Invoice.QuotationTitle",
             _ => "Invoice.SalesTitle"
         });
+        _btnReverse.Content = string.Equals(App.CurrentLanguageCode, "ar", StringComparison.OrdinalIgnoreCase) ? "عكس الفاتورة" : "Reverse invoice";
         RefreshLocalizedContent(Content as DependencyObject);
         if (_grid.Columns.Count >= 8)
         {
@@ -375,6 +380,12 @@ public sealed class InvoiceWin : BaseWin
         if (_lines.Count == 0) _lines.Add(new LineVm { TaxRate = doc.DefaultTaxRate });
         var locked = doc.Status == InvDocStatus.Posted;
         _btnSave.IsEnabled = !locked;
+        _btnReverse.IsEnabled = locked && doc.Kind is InvDocKind.SalesInvoice or InvDocKind.PurchaseInvoice or InvDocKind.PosSale;
+        if (_btnReverse.IsEnabled)
+        {
+            try { _btnReverse.IsEnabled = !InvRepo.HasCompletedReversal(doc.DocId, doc.Kind); }
+            catch { _btnReverse.IsEnabled = false; }
+        }
         _btnPost.IsEnabled = !locked;
         _grid.IsReadOnly = locked;
         RefreshTotals();
@@ -432,6 +443,87 @@ public sealed class InvoiceWin : BaseWin
         {
             MessageBox.Show(this, ex.Message, T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+
+    private void ReverseCurrentDocument()
+    {
+        var current = CaptureDoc();
+        if (current.DocId <= 0 || current.Status != InvDocStatus.Posted)
+        {
+            ShowWarn("Only a posted invoice can be reversed.");
+            return;
+        }
+
+        var reason = PromptReversalReason();
+        if (string.IsNullOrWhiteSpace(reason)) return;
+        var confirm = MessageBox.Show(
+            this,
+            $"A reversal document will be created for {current.DocNo}. The original invoice will remain unchanged.\\n\\nReason: {reason}\\n\\nContinue?",
+            string.Equals(App.CurrentLanguageCode, "ar", StringComparison.OrdinalIgnoreCase) ? "تأكيد عكس الفاتورة" : "Confirm invoice reversal",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (confirm != MessageBoxResult.Yes) return;
+
+        try
+        {
+            var reversalId = InvRepo.ReversePostedInvoice(
+                current.DocId,
+                current.Kind,
+                reason,
+                AppState.CurrentUser?.Username ?? Environment.UserName);
+            _btnReverse.IsEnabled = false;
+            MessageBox.Show(
+                this,
+                $"Reversal completed. Reversal document ID: {reversalId}.",
+                string.Equals(App.CurrentLanguageCode, "ar", StringComparison.OrdinalIgnoreCase) ? "تم عكس الفاتورة" : "Reversal completed",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, T("Common.Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private string? PromptReversalReason()
+    {
+        var ar = string.Equals(App.CurrentLanguageCode, "ar", StringComparison.OrdinalIgnoreCase);
+        var dialog = new Window
+        {
+            Title = ar ? "سبب عكس الفاتورة" : "Invoice reversal reason",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Width = 460,
+            Height = 220,
+            ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false
+        };
+        var root = new DockPanel { Margin = new Thickness(14) };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        var ok = new Button { Content = ar ? "متابعة" : "Continue", MinWidth = 90, Margin = new Thickness(4), IsDefault = true };
+        var cancel = new Button { Content = ar ? "إلغاء" : "Cancel", MinWidth = 90, Margin = new Thickness(4), IsCancel = true };
+        buttons.Children.Add(ok);
+        buttons.Children.Add(cancel);
+        DockPanel.SetDock(buttons, Dock.Bottom);
+        root.Children.Add(buttons);
+        var stack = new StackPanel();
+        stack.Children.Add(new TextBlock { Text = ar ? "أدخل سبب العكس (إلزامي):" : "Enter the reason for reversal (required):", Margin = new Thickness(0, 0, 0, 8) });
+        var input = new TextBox { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 90, MaxLength = 1000, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        input.SetResourceReference(StyleProperty, "VisuTextBoxStyle");
+        stack.Children.Add(input);
+        root.Children.Add(stack);
+        ok.Click += (_, _) =>
+        {
+            if (string.IsNullOrWhiteSpace(input.Text))
+            {
+                MessageBox.Show(dialog, ar ? "سبب العكس إلزامي." : "A reversal reason is required.", dialog.Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            dialog.DialogResult = true;
+        };
+        dialog.Content = root;
+        return dialog.ShowDialog() == true ? input.Text.Trim() : null;
     }
 
     private void RefreshTotals()
