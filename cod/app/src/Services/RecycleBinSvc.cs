@@ -237,7 +237,9 @@ public static class RecycleBinSvc
                 return Failed(item, "Company scope could not be verified; restore was blocked.");
             var primaryKeyColumn = ResolveExistingColumn(columns, item.PrimaryKeyColumn);
 
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
             var falseLiteral = DatabaseRuntime.IsPostgreSql() ? "FALSE" : "0";
             var trueLiteral = DatabaseRuntime.IsPostgreSql() ? "TRUE" : "1";
             var assignments = new List<string> { $"{Quote(softDeleteColumn)} = {falseLiteral}" };
@@ -273,8 +275,10 @@ public static class RecycleBinSvc
             if (affected <= 0)
                 return Failed(item, "No matching soft-deleted row was found.");
 
-            await WriteAuditEventAsync(connection, item, "RESTORE", Environment.UserName,
+            await WriteAuditEventAsync(connection, transaction, item, "RESTORE",
+                AppState.CurrentUser?.Username ?? Environment.UserName,
                 "Restore from recycle bin", cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             LogOperation("Restore",
                 $"table={item.TableName} pk={item.PrimaryKeyValue} label={item.DisplayLabel} company={item.CompanyCode}");
 
@@ -336,7 +340,9 @@ public static class RecycleBinSvc
                 return Failed(item, "Company scope could not be verified; permanent deletion was blocked.");
             var primaryKeyColumn = ResolveExistingColumn(columns, item.PrimaryKeyColumn);
 
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
             var predicates = new List<string>
             {
                 $"{Quote(primaryKeyColumn)} = @primaryKey",
@@ -358,8 +364,10 @@ public static class RecycleBinSvc
             if (affected <= 0)
                 return Failed(item, "No matching bin row was found to purge.");
 
-            await WriteAuditEventAsync(connection, item, "PERMANENT_DELETE", Environment.UserName,
+            await WriteAuditEventAsync(connection, transaction, item, "PERMANENT_DELETE",
+                AppState.CurrentUser?.Username ?? Environment.UserName,
                 "Permanent deletion from recycle bin", cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             LogOperation("Purge",
                 $"table={item.TableName} pk={item.PrimaryKeyValue} label={item.DisplayLabel} company={item.CompanyCode}");
 
@@ -733,10 +741,11 @@ public static class RecycleBinSvc
     }
 
     private static async Task WriteAuditEventAsync(
-        DbConnection connection, RecycleBinItem item, string action, string actor,
+        DbConnection connection, DbTransaction transaction, RecycleBinItem item, string action, string actor,
         string details, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "INSERT INTO deletion_audit_log " +
             "(event_id, company_code, table_name, record_key, action_type, actor, occurred_at, method, reason, record_snapshot) " +
             "VALUES (@eventId, @company, @table, @recordKey, @action, @actor, @occurredAt, @method, @reason, @snapshot)";
