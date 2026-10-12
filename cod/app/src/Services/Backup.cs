@@ -605,8 +605,13 @@ internal static class SteiSvc
                     {
                         var valid = row.Keys.All(k => columns.Contains(k, StringComparer.OrdinalIgnoreCase));
                         if (!valid) throw new InvalidDataException($"Column mismatch in {pair.Key}.");
-                        RemapCompanyId(row, manifest.SourceCompanyId,
-                            AppState.CurrentUser?.CompanyId ?? AppState.CurrentCompanyCode);
+                        RemapCompanyId(
+                            row,
+                            pair.Key,
+                            manifest.SourceCompanyId,
+                            manifest.SourceCompanyCode,
+                            AppState.CurrentUser?.CompanyId ?? AppState.CurrentCompanyCode,
+                            AppState.CurrentCompanyCode ?? AppState.CurrentUser?.CompanyId);
                         if (expectedDatasetKey != null)
                         {
                             var primaryKeys = await GetPrimaryKeyColumnsAsync(db, provider, pair.Key, ct);
@@ -860,25 +865,58 @@ internal static class SteiSvc
     }
 
 
-    private static void RemapCompanyId(Dictionary<string, JsonElement> row, string sourceCompanyId, string? targetCompanyId)
+    private static void RemapCompanyId(
+        Dictionary<string, JsonElement> row,
+        string tableName,
+        string sourceCompanyId,
+        string sourceCompanyCode,
+        string? targetCompanyId,
+        string? targetCompanyCode)
     {
-        if (string.IsNullOrWhiteSpace(targetCompanyId) || string.IsNullOrWhiteSpace(sourceCompanyId))
-            return;
         var key = row.Keys.FirstOrDefault(k => string.Equals(k, "company_id", StringComparison.OrdinalIgnoreCase));
-        if (key is null) return;
+        if (key is null)
+            return;
+
+        var legacyCodeScoped = IsLegacyCompanyCodeScopedTable(tableName);
+        var sourceScope = legacyCodeScoped
+            ? (!string.IsNullOrWhiteSpace(sourceCompanyCode) ? sourceCompanyCode : sourceCompanyId)
+            : sourceCompanyId;
+        var targetScope = legacyCodeScoped
+            ? (!string.IsNullOrWhiteSpace(targetCompanyCode) ? targetCompanyCode : targetCompanyId)
+            : (!string.IsNullOrWhiteSpace(targetCompanyId) ? targetCompanyId : targetCompanyCode);
+
+        if (string.IsNullOrWhiteSpace(sourceScope) || string.IsNullOrWhiteSpace(targetScope))
+            return;
+
         var sourceValue = Convert.ToString(FromJson(row[key]), CultureInfo.InvariantCulture);
-        if (!string.Equals(sourceValue, sourceCompanyId, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(sourceValue, sourceScope, StringComparison.OrdinalIgnoreCase))
             return;
 
         if (row[key].ValueKind == JsonValueKind.Number &&
-            long.TryParse(targetCompanyId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var targetLong))
+            long.TryParse(targetScope, NumberStyles.Integer, CultureInfo.InvariantCulture, out var targetLong))
             row[key] = JsonSerializer.SerializeToElement(targetLong);
         else if (row[key].ValueKind == JsonValueKind.Number &&
-                 decimal.TryParse(targetCompanyId, NumberStyles.Number, CultureInfo.InvariantCulture, out var targetDecimal))
+                 decimal.TryParse(targetScope, NumberStyles.Number, CultureInfo.InvariantCulture, out var targetDecimal))
             row[key] = JsonSerializer.SerializeToElement(targetDecimal);
         else
-            row[key] = JsonSerializer.SerializeToElement(targetCompanyId);
+            row[key] = JsonSerializer.SerializeToElement(targetScope);
     }
+
+    private static bool IsLegacyCompanyCodeScopedTable(string tableName)
+        => tableName.Equals("sales_documents", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("purchase_documents", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("materials", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("material_groups", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("customers", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("suppliers", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("accounts", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("chart_of_accounts", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("branches", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("warehouses", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("brands", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("product_categories", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("units_of_measure", StringComparison.OrdinalIgnoreCase)
+            || tableName.Equals("employees", StringComparison.OrdinalIgnoreCase);
 
     private static async Task<int> SoftDeleteMissingDatasetRowsAsync(
         DbConnection db, DbTransaction tx, string provider, string table, List<string> columns,
