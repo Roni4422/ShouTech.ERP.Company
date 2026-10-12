@@ -121,7 +121,7 @@ internal sealed class SteiPackage
     public Dictionary<string, List<Dictionary<string, JsonElement>>> Tables { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
-internal sealed record SteiResult(bool Success, bool Partial, long Rows, long FailedRows, int Tables, int FailedTables, IReadOnlyList<string> Errors, string Message);
+internal sealed record SteiResult(bool Success, bool Partial, long Rows, long FailedRows, int Tables, int FailedTables, IReadOnlyList<string> Errors, string Message, long DeletedRows = 0);
 
 public sealed record SteiPackageInfo(
     string FileName, string PackageId, string OperationId, string OperationType,
@@ -474,6 +474,7 @@ internal static class SteiSvc
             total += rows.Count;
         var failedRows = 0L;
         var failedTables = 0;
+        var deletedRows = 0L;
 
         if (simulation)
         {
@@ -650,7 +651,7 @@ internal static class SteiSvc
                         throw new InvalidOperationException($"The package contains multiple company scopes for '{pair.Key}'. Replace mode was cancelled.");
                     var keep = importedKeysByTable.TryGetValue(pair.Key, out var imported)
                         ? imported : new HashSet<string>(StringComparer.Ordinal);
-                    await SoftDeleteMissingDatasetRowsAsync(db, tx, provider, pair.Key, columns,
+                    deletedRows += await SoftDeleteMissingDatasetRowsAsync(db, tx, provider, pair.Key, columns,
                         companyColumn, activeCompany, primaryKeys, keep, ct);
                 }
             }
@@ -667,7 +668,9 @@ internal static class SteiSvc
         }
 
         var partial = failedRows > 0 || failedTables > 0;
-        return new SteiResult(!partial, partial, total - failedRows, failedRows, tables.Count, failedTables, errors, partial ? "Import completed with issues; no database changes were committed." : "Import completed successfully.");
+        return new SteiResult(!partial, partial, total - failedRows, failedRows, tables.Count, failedTables, errors,
+            partial ? "Import completed with issues; no database changes were committed." : "Import completed successfully.",
+            partial ? 0 : deletedRows);
     }
 
     private static SteiManifest BuildManifest(string provider)
@@ -878,7 +881,7 @@ internal static class SteiSvc
             row[key] = JsonSerializer.SerializeToElement(targetCompanyId);
     }
 
-    private static async Task SoftDeleteMissingDatasetRowsAsync(
+    private static async Task<int> SoftDeleteMissingDatasetRowsAsync(
         DbConnection db, DbTransaction tx, string provider, string table, List<string> columns,
         string companyColumn, string activeCompany, IReadOnlyList<string> primaryKeys,
         HashSet<string> importedKeys, CancellationToken ct)
@@ -917,6 +920,7 @@ internal static class SteiSvc
             for (var i = 0; i < primaryKeys.Count; i++) AddParameter(update, "@k" + i, values[i] ?? DBNull.Value);
             await update.ExecuteNonQueryAsync(ct);
         }
+        return missing.Count;
     }
 
     private static async Task<List<string>> GetRequiredColumnsAsync(
