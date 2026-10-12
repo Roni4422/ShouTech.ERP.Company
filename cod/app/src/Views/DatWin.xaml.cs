@@ -25,6 +25,7 @@ public partial class DatWin : Window
     private string? _verifiedPackageId;
     private string? _verifiedPackagePassword;
     private string? _verifiedPackageDatasetKey;
+    private string? _verifiedPackageSourceCompanyCode;
     private const string LogCategory = "DataExchange";
 
     public DatWin() : this(ExchangeMode.Import)
@@ -275,6 +276,7 @@ public partial class DatWin : Window
         _verifiedPackageId = null;
         _verifiedPackagePassword = null;
         _verifiedPackageDatasetKey = null;
+        _verifiedPackageSourceCompanyCode = null;
     }
 
     private void ImportPasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
@@ -345,10 +347,12 @@ public partial class DatWin : Window
                 $"{L("PackageFields", "Fields and types")}: {fieldLines}");
             if (matchedOption == null)
                 ImportPackageInfoBox.Text += Environment.NewLine + L("DatasetNotAvailable", "The package data type is not available in the current import list.");
+            var fileNameValid = !isDataset || (matchedOption != null && string.Equals(actualName, expectedName, StringComparison.OrdinalIgnoreCase));
             _verifiedPackagePath = Path.GetFullPath(path);
-            _verifiedPackageId = info.PackageId;
+            _verifiedPackageId = fileNameValid && matchedOption != null ? info.PackageId : null;
             _verifiedPackagePassword = password;
             _verifiedPackageDatasetKey = isDataset ? info.DatasetKey : "$FullPackage";
+            _verifiedPackageSourceCompanyCode = info.SourceCompanyCode;
             LogOp("PackageMetadata.Read", $"scope={info.DataScope} | dataset={info.DatasetKey} | rows={info.RowCount} | package={info.PackageId} | sourceCompany={info.SourceCompanyCode} | user={GetCurrentUserName()}");
         }
         catch (Exception ex)
@@ -586,6 +590,14 @@ public partial class DatWin : Window
                 {
                     MessageBox.Show(L("PackageDatasetMismatch", "The selected import type does not match the verified package metadata. Read the file details again."), Title, MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
+                }
+                if (!string.IsNullOrWhiteSpace(_verifiedPackageSourceCompanyCode) &&
+                    !string.Equals(_verifiedPackageSourceCompanyCode, GetCurrentCompanyCode(), StringComparison.OrdinalIgnoreCase))
+                {
+                    var confirmCompany = MessageBox.Show(
+                        L("DifferentSourceCompany", $"This package was exported from company '{_verifiedPackageSourceCompanyCode}', while the active company is '{GetCurrentCompanyCode()}'. Continue only if this cross-company import is intentional."),
+                        Title, MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                    if (confirmCompany != MessageBoxResult.Yes) return;
                 }
                 if (steiOption.Key == "$FullPackage")
                 {
