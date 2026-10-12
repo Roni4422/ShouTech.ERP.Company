@@ -221,7 +221,7 @@ public static class RecycleBinSvc
             var predicates = new List<string>
             {
                 $"{Quote(primaryKeyColumn)} = @primaryKey",
-                $"{Quote(softDeleteColumn)} = {trueLiteral}"
+                $"{Quote(softDeleteColumn!)} = {trueLiteral}"
             };
             if (companyColumn is not null)
             {
