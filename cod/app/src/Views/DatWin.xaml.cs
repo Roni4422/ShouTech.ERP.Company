@@ -529,8 +529,8 @@ public partial class DatWin : Window
                         return;
                     }
 
-                    var replaceMode = ImportReplaceRadio?.IsChecked == true;
-                    if (replaceMode)
+                    var excelReplaceMode = ImportReplaceRadio?.IsChecked == true;
+                    if (excelReplaceMode)
                     {
                         var confirm = MessageBox.Show(
                             L("ReplaceConfirm",
@@ -546,33 +546,33 @@ public partial class DatWin : Window
                     var company = GetCurrentCompanyCode();
                     var startedAt = DateTime.Now;
                     LogOp("ImportExcel.Start",
-                        $"key={importOption.Key} | mode={(replaceMode ? "Replace" : "Upsert")} | user={actor} | company={company} | at={startedAt:yyyy-MM-dd HH:mm:ss} | file={path}");
+                        $"key={importOption.Key} | mode={(excelReplaceMode ? "Replace" : "Upsert")} | user={actor} | company={company} | at={startedAt:yyyy-MM-dd HH:mm:ss} | file={path}");
 
                     var importResult = await DataExportSvc.ImportExcelAsync(
                         path,
                         importOption,
                         AppState.CurrentCompanyCode ?? string.Empty,
-                        replaceMode: replaceMode,
+                        excelReplaceMode: excelReplaceMode,
                         ct: CancellationToken.None);
 
                     var finishedAt = DateTime.Now;
                     ResultStatusText.Text = L("Success", "Completed successfully");
                     ResultTextBox.Text = string.Join(Environment.NewLine,
                         importOption.DisplayName,
-                        $"{L("Mode", "Mode")}: {(replaceMode ? L("Replace", "Wipe to bin (missing rows soft-deleted)") : L("Upsert", "Update / insert only (missing rows kept)"))}",
+                        $"{L("Mode", "Mode")}: {(excelReplaceMode ? L("Replace", "Wipe to bin (missing rows soft-deleted)") : L("Upsert", "Update / insert only (missing rows kept)"))}",
                         $"{L("UpsertedRows", "Written rows")}: {importResult.UpsertedRows.ToString("N0", CultureInfo.CurrentCulture)}",
                         $"{L("DeletedRows", "Removed rows")}: {importResult.DeletedRows.ToString("N0", CultureInfo.CurrentCulture)}",
                         $"{L("User", "User")}: {actor}",
                         $"{L("Company", "Company")}: {company}",
                         $"{L("Date", "Date")}: {finishedAt:yyyy-MM-dd}",
                         $"{L("Time", "Time")}: {finishedAt:HH:mm:ss}",
-                        replaceMode
+                        excelReplaceMode
                             ? L("ReplaceExplain", "Cards present in Excel were updated; cards removed from Excel were moved to the recycle bin for this company (restorable).")
                             : L("UpsertExplain", "Only cards present in Excel were updated or inserted. Cards you deleted from Excel remain in the database."));
                     _lastDetails = ResultTextBox.Text;
                     DetailsButton.IsEnabled = false;
                     LogOp("ImportExcel",
-                        $"{importOption.Key} | mode={(replaceMode ? "Replace" : "Upsert")} | upserted={importResult.UpsertedRows} | deleted={importResult.DeletedRows} | user={actor} | company={company} | at={finishedAt:yyyy-MM-dd HH:mm:ss} | file={path}");
+                        $"{importOption.Key} | mode={(excelReplaceMode ? "Replace" : "Upsert")} | upserted={importResult.UpsertedRows} | deleted={importResult.DeletedRows} | user={actor} | company={company} | at={finishedAt:yyyy-MM-dd HH:mm:ss} | file={path}");
                     return;
                 }
 
