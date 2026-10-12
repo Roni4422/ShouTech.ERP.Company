@@ -428,11 +428,22 @@ internal static class SteiSvc
                 throw new InvalidDataException("This is a dataset-specific package. Select its matching dataset type before importing.");
         }
         else if (!string.Equals(manifest.DataScope, $"Dataset:{expectedDatasetKey}", StringComparison.Ordinal) ||
+                 !string.Equals(manifest.DatasetKey, expectedDatasetKey, StringComparison.Ordinal) ||
                  string.IsNullOrWhiteSpace(expectedTableName) ||
+                 !string.Equals(manifest.DatasetTableName, expectedTableName, StringComparison.OrdinalIgnoreCase) ||
                  tables.Count != 1 ||
                  !tables.ContainsKey(expectedTableName))
         {
-            throw new InvalidDataException("The encrypted package does not match the selected dataset type.");
+            throw new InvalidDataException("The encrypted package metadata, dataset key, table name and selected dataset do not match.");
+        }
+        else
+        {
+            var packagedFields = tables[expectedTableName].FirstOrDefault()?.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase)
+                ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (manifest.DatasetFields.Count == 0 ||
+                !manifest.DatasetFields.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(packagedFields) ||
+                manifest.DatasetFieldTypes.Keys.Any(field => !packagedFields.Contains(field)))
+                throw new InvalidDataException("The encrypted package field metadata does not match its data payload.");
         }
 
         var provider = DatabaseRuntime.GetProvider();
@@ -541,7 +552,7 @@ internal static class SteiSvc
             ExportedByUserId = user?.Id ?? "",
             ExportedByUserName = !string.IsNullOrWhiteSpace(user?.FullName) ? user!.FullName : user?.Username ?? Environment.UserName,
             SourceCompanyId = user?.CompanyId ?? "",
-            SourceCompanyCode = AppState.CurrentUser?.CompanyId ?? "",
+            SourceCompanyCode = AppState.CurrentCompanyCode ?? AppState.CurrentUser?.CompanyId ?? "",
             SourceCompanyName = AppState.CurrentCompanyDisplayName,
             SourceDatabaseName = GetDatabaseName(provider),
             SourceDatabaseProvider = provider,
