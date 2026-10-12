@@ -233,6 +233,8 @@ public static class RecycleBinSvc
             var companyValue = definition.CompanyIdIsCode
                 ? item.CompanyCode
                 : await FindCompanyIdAsync(connection, item.CompanyCode, cancellationToken).ConfigureAwait(false);
+            if (companyColumn is null || companyValue is null)
+                return Failed(item, "Company scope could not be verified; restore was blocked.");
             var primaryKeyColumn = ResolveExistingColumn(columns, item.PrimaryKeyColumn);
 
             await using var command = connection.CreateCommand();
@@ -313,6 +315,8 @@ public static class RecycleBinSvc
             var columns = await GetColumnNamesAsync(connection, item.TableName, cancellationToken)
                 .ConfigureAwait(false);
             var softDeleteColumn = FindColumn(columns, "is_deleted");
+            if (softDeleteColumn is null)
+                return Failed(item, "Permanent deletion is allowed only for a soft-deleted row in the recycle bin.");
             var companyColumn = FindColumn(columns, "company_id") ?? FindColumn(columns, "companyid");
             var definition = Catalog.FirstOrDefault(entry => entry.TableName.Equals(item.TableName, StringComparison.OrdinalIgnoreCase))
                 ?? new BinTableDefinition(item.TableName, HumanizeTableName(item.TableName), [], [item.PrimaryKeyColumn],
@@ -326,19 +330,18 @@ public static class RecycleBinSvc
             var companyValue = definition.CompanyIdIsCode
                 ? item.CompanyCode
                 : await FindCompanyIdAsync(connection, item.CompanyCode, cancellationToken).ConfigureAwait(false);
+            if (companyColumn is null || companyValue is null)
+                return Failed(item, "Company scope could not be verified; permanent deletion was blocked.");
             var primaryKeyColumn = ResolveExistingColumn(columns, item.PrimaryKeyColumn);
 
             await using var command = connection.CreateCommand();
-            var predicates = new List<string> { $"{Quote(primaryKeyColumn)} = @primaryKey" };
-            if (softDeleteColumn is not null)
-                predicates.Add($"{Quote(softDeleteColumn)} = 1");
-            if (companyColumn is not null)
+            var predicates = new List<string>
             {
-                if (companyValue is null)
-                    return Failed(item, "Company could not be resolved; permanent deletion was blocked.");
-                predicates.Add($"{Quote(companyColumn)} = @companyValue");
-                AddParameter(command, "@companyValue", companyValue);
-            }
+                $"{Quote(primaryKeyColumn)} = @primaryKey",
+                $"{Quote(softDeleteColumn)} = 1",
+                $"{Quote(companyColumn)} = @companyValue"
+            };
+            AddParameter(command, "@companyValue", companyValue);
             if (definition.DraftOnly)
             {
                 predicates.Add($"{Quote(statusColumn!)} = @draftStatus");
@@ -381,6 +384,14 @@ public static class RecycleBinSvc
         if (softDeleteColumn is null)
             return Array.Empty<RecycleBinItem>();
 
+        // Fail closed: a recycle-bin query must always be scoped to one company.
+        var companyColumn = FindColumn(columns, "company_id") ?? FindColumn(columns, "companyid");
+        if (companyColumn is null)
+            return Array.Empty<RecycleBinItem>();
+        var companyValue = definition.CompanyIdIsCode ? companyCode : companyId;
+        if (companyValue is null)
+            return Array.Empty<RecycleBinItem>();
+
         var primaryKeyColumn = definition.PrimaryKeyCandidates
             .Select(candidate => FindColumn(columns, candidate))
             .FirstOrDefault(column => column is not null);
@@ -391,7 +402,6 @@ public static class RecycleBinSvc
             .Select(candidate => FindColumn(columns, candidate))
             .FirstOrDefault(column => column is not null) ?? primaryKeyColumn;
 
-        var companyColumn = FindColumn(columns, "company_id") ?? FindColumn(columns, "companyid");
         var deletedAtColumn = FindColumn(columns, "deleted_at");
         var deletedByColumn = FindColumn(columns, "deleted_by");
 
@@ -403,14 +413,8 @@ public static class RecycleBinSvc
             selectList.Add(Quote(deletedByColumn));
 
         var predicates = new List<string> { $"{Quote(softDeleteColumn)} = 1" };
-        if (companyColumn is not null)
-        {
-            var companyValue = definition.CompanyIdIsCode ? companyCode : companyId;
-            if (companyValue is null)
-                return Array.Empty<RecycleBinItem>();
-            predicates.Add($"{Quote(companyColumn)} = @companyId");
-            AddParameter(command, "@companyId", companyValue);
-        }
+        predicates.Add($"{Quote(companyColumn)} = @companyId");
+        AddParameter(command, "@companyId", companyValue);
         if (definition.DraftOnly)
         {
             var statusColumn = FindColumn(columns, "status");
