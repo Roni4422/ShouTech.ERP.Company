@@ -494,6 +494,107 @@ public static class RecycleBinSvc
         // RecordDeletionAsync to provide the authenticated actor and the user's reason.
         if (connection is SqliteConnection)
             await EnsureSqliteDeletionTriggersAsync(connection, cancellationToken).ConfigureAwait(false);
+        else if (connection is NpgsqlConnection)
+            await EnsurePostgresDeletionTriggersAsync(connection, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task EnsurePostgresDeletionTriggersAsync(
+        DbConnection connection, CancellationToken cancellationToken)
+    {
+        await ExecuteSqliteAuditDdlAsync(connection, """
+            CREATE OR REPLACE FUNCTION public.shoutech_audit_delete_row()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $audit$
+            DECLARE
+                row_data jsonb;
+                company_value text;
+                key_value text;
+                actor_value text;
+                action_value text;
+                method_value text;
+            BEGIN
+                IF TG_OP = 'UPDATE' THEN
+                    row_data := to_jsonb(NEW);
+                    action_value := 'DELETE';
+                    method_value := 'SOFT_DELETE_TRIGGER';
+                    actor_value := COALESCE(row_data ->> 'deleted_by', 'database-trigger');
+                    INSERT INTO public.deletion_audit_log
+                        (event_id, company_code, table_name, record_key, action_type, actor,
+                         occurred_at, method, reason, record_snapshot)
+                    VALUES
+                        (md5(random()::text || clock_timestamp()::text || txid_current()::text),
+                         COALESCE(row_data ->> TG_ARGV[1], ''), TG_TABLE_NAME,
+                         COALESCE(row_data ->> TG_ARGV[0], ''), action_value, actor_value,
+                         clock_timestamp()::text, method_value,
+                         'Captured by database trigger; caller did not provide a reason',
+                         row_data::text);
+                    RETURN NEW;
+                ELSE
+                    row_data := to_jsonb(OLD);
+                    INSERT INTO public.deletion_audit_log
+                        (event_id, company_code, table_name, record_key, action_type, actor,
+                         occurred_at, method, reason, record_snapshot)
+                    VALUES
+                        (md5(random()::text || clock_timestamp()::text || txid_current()::text),
+                         COALESCE(row_data ->> TG_ARGV[1], ''), TG_TABLE_NAME,
+                         COALESCE(row_data ->> TG_ARGV[0], ''), 'DELETE', 'database-trigger',
+                         clock_timestamp()::text, 'HARD_DELETE_TRIGGER',
+                         'Captured by database trigger; caller did not provide a reason',
+                         row_data::text);
+                    RETURN OLD;
+                END IF;
+            END;
+            $audit$;
+            """, cancellationToken).ConfigureAwait(false);
+
+        var tables = await GetTableNamesAsync(connection, cancellationToken).ConfigureAwait(false);
+        foreach (var table in tables)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (table.Equals("deletion_audit_log", StringComparison.OrdinalIgnoreCase) ||
+                !SafeIdentifier.IsMatch(table))
+                continue;
+
+            try
+            {
+                var columns = await GetColumnNamesAsync(connection, table, cancellationToken).ConfigureAwait(false);
+                var companyColumn = FindColumn(columns, "company_id") ?? FindColumn(columns, "companyid");
+                var primaryKey = InferPrimaryKey(table, columns);
+                if (companyColumn is null || primaryKey is null)
+                    continue;
+
+                var safeSuffix = table.Length > 36 ? table[..36] : table;
+                if (FindColumn(columns, "is_deleted") is { } softDeleteColumn)
+                {
+                    var triggerName = "trg_audit_sd_" + safeSuffix;
+                    var sql = $"""
+                        DROP TRIGGER IF EXISTS {Quote(triggerName)} ON public.{Quote(table)};
+                        CREATE TRIGGER {Quote(triggerName)}
+                        AFTER UPDATE OF {Quote(softDeleteColumn)} ON public.{Quote(table)}
+                        FOR EACH ROW
+                        WHEN (OLD.{Quote(softDeleteColumn)} IS DISTINCT FROM NEW.{Quote(softDeleteColumn)}
+                              AND NEW.{Quote(softDeleteColumn)} IS TRUE)
+                        EXECUTE FUNCTION public.shoutech_audit_delete_row('{primaryKey}', '{companyColumn}');
+                        """;
+                    await ExecuteSqliteAuditDdlAsync(connection, sql, cancellationToken).ConfigureAwait(false);
+                }
+
+                var hardDeleteName = "trg_audit_hd_" + safeSuffix;
+                var hardSql = $"""
+                    DROP TRIGGER IF EXISTS {Quote(hardDeleteName)} ON public.{Quote(table)};
+                    CREATE TRIGGER {Quote(hardDeleteName)}
+                    AFTER DELETE ON public.{Quote(table)}
+                    FOR EACH ROW
+                    EXECUTE FUNCTION public.shoutech_audit_delete_row('{primaryKey}', '{companyColumn}');
+                    """;
+                await ExecuteSqliteAuditDdlAsync(connection, hardSql, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                LogWarning($"PostgreSQL audit trigger skipped for '{table}': {ex.Message}");
+            }
+        }
     }
 
     private static async Task EnsureSqliteDeletionTriggersAsync(
