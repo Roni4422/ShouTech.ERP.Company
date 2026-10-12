@@ -56,10 +56,10 @@ namespace Kern.Tests
 
                 var booleanTask = (Task<bool>)detector.Invoke(
                     null, new object[] { connection, "flag_types", "bool_flag", CancellationToken.None })!;
+                Assert.True(await booleanTask);
+
                 var integerTask = (Task<bool>)detector.Invoke(
                     null, new object[] { connection, "flag_types", "int_flag", CancellationToken.None })!;
-
-                Assert.True(await booleanTask);
                 Assert.False(await integerTask);
             }
             finally
