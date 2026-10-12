@@ -481,12 +481,46 @@ internal static class SteiSvc
                     continue;
                 }
                 var columns = await GetColumnsAsync(db, provider, pair.Key, ct);
+                if (columns.Count == 0)
+                {
+                    failedTables++;
+                    errors.Add($"No compatible columns found: {pair.Key}");
+                    continue;
+                }
+
+                var isDatasetPackage = expectedDatasetKey != null;
+                var primaryKeys = isDatasetPackage
+                    ? await GetPrimaryKeyColumnsAsync(db, provider, pair.Key, ct)
+                    : new List<string>();
+                if (isDatasetPackage && (primaryKeys.Count == 0 ||
+                    primaryKeys.Any(key => !pair.Value.All(row => row.ContainsKey(key))))
+                {
+                    failedTables++;
+                    errors.Add($"The target table '{pair.Key}' has no discoverable primary key, or the package omits one. Safe dataset import requires all primary-key fields.");
+                    continue;
+                }
+
+                var seenKeys = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var row in pair.Value)
                 {
-                    if (row.Keys.Any(k => !columns.Contains(k, StringComparer.OrdinalIgnoreCase)))
+                    var rowError = row.Keys.FirstOrDefault(k => !columns.Contains(k, StringComparer.OrdinalIgnoreCase));
+                    if (rowError != null)
                     {
                         failedRows++;
-                        errors.Add($"Column mismatch in table {pair.Key}.");
+                        errors.Add($"{pair.Key}: unknown column '{rowError}'.");
+                    }
+                    else if (isDatasetPackage && primaryKeys.Any(key =>
+                        !row.TryGetValue(key, out var value) ||
+                        value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ||
+                        (value.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(value.GetString()))))
+                    {
+                        failedRows++;
+                        errors.Add($"{pair.Key}: a primary-key field is empty.");
+                    }
+                    else if (isDatasetPackage && !seenKeys.Add(BuildSteiCompositeKey(row, primaryKeys)))
+                    {
+                        failedRows++;
+                        errors.Add($"{pair.Key}: duplicate primary key inside the package.");
                     }
                     done++;
                     progress?.Report((done, total));
@@ -522,8 +556,22 @@ internal static class SteiSvc
                     {
                         var valid = row.Keys.All(k => columns.Contains(k, StringComparer.OrdinalIgnoreCase));
                         if (!valid) throw new InvalidDataException($"Column mismatch in {pair.Key}.");
-                        RemapCompanyId(row, manifest.SourceCompanyId, AppState.CurrentUser?.CompanyId);
-                        await InsertIgnoreAsync(db, tx, provider, pair.Key, row, columns, ct);
+                        RemapCompanyId(row, manifest.SourceCompanyId,
+                            AppState.CurrentCompanyCode ?? AppState.CurrentUser?.CompanyId);
+                        if (expectedDatasetKey != null)
+                        {
+                            var primaryKeys = await GetPrimaryKeyColumnsAsync(db, provider, pair.Key, ct);
+                            if (primaryKeys.Count == 0 || primaryKeys.Any(key => !row.ContainsKey(key)))
+                                throw new InvalidDataException("Safe dataset import requires all primary-key fields.");
+                            if (IsProtectedAccountingDataset(expectedDatasetKey))
+                                await InsertDatasetRowOnlyAsync(db, tx, provider, pair.Key, row, columns, ct);
+                            else
+                                await UpsertDatasetRowAsync(db, tx, provider, pair.Key, row, columns, primaryKeys, ct);
+                        }
+                        else
+                        {
+                            await InsertIgnoreAsync(db, tx, provider, pair.Key, row, columns, ct);
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -747,6 +795,94 @@ internal static class SteiSvc
             return;
         if (string.Equals(row[key].GetString(), sourceCompanyId, StringComparison.OrdinalIgnoreCase))
             row[key] = JsonSerializer.SerializeToElement(targetCompanyId);
+    }
+
+    private static async Task<List<string>> GetPrimaryKeyColumnsAsync(
+        DbConnection db, string provider, string table, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand();
+        if (DatabaseRuntime.IsSqlite(provider))
+        {
+            cmd.CommandText = "PRAGMA table_info(" + Quote(table) + ");";
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            var keys = new List<(int Order, string Name)>();
+            while (await reader.ReadAsync(ct))
+            {
+                var order = Convert.ToInt32(reader.GetValue(5), CultureInfo.InvariantCulture);
+                if (order > 0) keys.Add((order, reader.GetString(1)));
+            }
+            return keys.OrderBy(x => x.Order).Select(x => x.Name).ToList();
+        }
+
+        cmd.CommandText = @"SELECT kcu.column_name
+FROM information_schema.table_constraints tc
+JOIN information_schema.key_column_usage kcu
+  ON tc.constraint_name = kcu.constraint_name
+ AND tc.table_schema = kcu.table_schema
+ AND tc.table_name = kcu.table_name
+WHERE tc.constraint_type = 'PRIMARY KEY'
+  AND tc.table_schema = 'public' AND tc.table_name = @table
+ORDER BY kcu.ordinal_position;";
+        AddParameter(cmd, "@table", table);
+        await using var pgReader = await cmd.ExecuteReaderAsync(ct);
+        var result = new List<string>();
+        while (await pgReader.ReadAsync(ct)) result.Add(pgReader.GetString(0));
+        return result;
+    }
+
+    private static string BuildSteiCompositeKey(
+        IReadOnlyDictionary<string, JsonElement> row, IReadOnlyList<string> keys)
+        => string.Join("\u001f", keys.Select(key => row.TryGetValue(key, out var value)
+            ? value.GetRawText() : "<missing>"));
+
+    // Posted documents and inventory/valuation history must never be overwritten by
+    // a generic data package. Such datasets are insert-only; reversals/cancellations
+    // belong to the accounting workflow and preserve the original audit trail.
+    private static bool IsProtectedAccountingDataset(string key)
+        => key is "Sales" or "SalesLines" or "SalesReturns" or "SalesReturnLines"
+            or "Purchases" or "PurchaseLines" or "PurchaseReturns" or "PurchaseReturnLines"
+            or "ReceiptVouchers" or "PaymentVouchers" or "StockMovements"
+            or "StockAdjustments" or "StockAdjustmentLines" or "OpeningStock"
+            or "CostLayers" or "ValuationHistory" or "ProductionOrders" or "ProductionOrderLines";
+
+    private static async Task UpsertDatasetRowAsync(
+        DbConnection db, DbTransaction tx, string provider, string table,
+        Dictionary<string, JsonElement> row, List<string> columns,
+        IReadOnlyList<string> primaryKeys, CancellationToken ct)
+    {
+        var selected = columns.Where(c => row.ContainsKey(c)).ToList();
+        if (selected.Count == 0) throw new InvalidDataException($"No compatible values were supplied for '{table}'.");
+        var where = string.Join(" AND ", primaryKeys.Select((key, i) => Quote(key) + "=@k" + i));
+        await using var update = db.CreateCommand();
+        update.Transaction = tx;
+        var updates = selected.Where(c => !primaryKeys.Contains(c, StringComparer.OrdinalIgnoreCase)).ToList();
+        if (updates.Count > 0)
+        {
+            update.CommandText = $"UPDATE {Quote(table)} SET " +
+                string.Join(",", updates.Select((c, i) => Quote(c) + "=@u" + i)) + " WHERE " + where + ";";
+            for (var i = 0; i < updates.Count; i++) AddParameter(update, "@u" + i, FromJson(row[updates[i]]));
+            for (var i = 0; i < primaryKeys.Count; i++) AddParameter(update, "@k" + i, FromJson(row[primaryKeys[i]]));
+            if (await update.ExecuteNonQueryAsync(ct) > 0) return;
+        }
+
+        await InsertDatasetRowOnlyAsync(db, tx, provider, table, row, columns, ct);
+    }
+
+    private static async Task InsertDatasetRowOnlyAsync(
+        DbConnection db, DbTransaction tx, string provider, string table,
+        Dictionary<string, JsonElement> row, List<string> columns, CancellationToken ct)
+    {
+        var selected = columns.Where(c => row.ContainsKey(c)).ToList();
+        if (selected.Count == 0) throw new InvalidDataException($"No compatible values were supplied for '{table}'.");
+        var names = string.Join(",", selected.Select(Quote));
+        var pars = string.Join(",", selected.Select((_, i) => "@p" + i));
+        var prefix = DatabaseRuntime.IsSqlite(provider) ? "INSERT OR IGNORE" : "INSERT";
+        var suffix = DatabaseRuntime.IsPostgreSql(provider) ? " ON CONFLICT DO NOTHING" : "";
+        await using var cmd = db.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = $"{prefix} INTO {Quote(table)} ({names}) VALUES ({pars}){suffix};";
+        for (var i = 0; i < selected.Count; i++) AddParameter(cmd, "@p" + i, FromJson(row[selected[i]]));
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     private static async Task InsertIgnoreAsync(DbConnection db, DbTransaction tx, string provider, string table, Dictionary<string, JsonElement> row, List<string> columns, CancellationToken ct)
