@@ -116,6 +116,23 @@ namespace Kern.Tests
         }
 
         [Fact]
+        public void DataExportSvc_ReplaceModeMustRejectRowsWithoutPrimaryKeys()
+        {
+            var validate = typeof(DataExportSvc).GetMethod(
+                "EnsureReplaceKeysArePresent",
+                BindingFlags.Static | BindingFlags.NonPublic)!;
+
+            var missingKey = new Dictionary<string, object?> { ["material_id"] = null };
+            var exception = Assert.Throws<TargetInvocationException>(() =>
+                validate.Invoke(null, new object[] { missingKey, new[] { "material_id" } }));
+
+            Assert.IsType<InvalidDataException>(exception.InnerException);
+
+            var populatedKey = new Dictionary<string, object?> { ["material_id"] = 123L };
+            validate.Invoke(null, new object[] { populatedKey, new[] { "material_id" } });
+        }
+
+        [Fact]
         public void DataExportSvc_ShouldExportOnlyMaterialCardFields()
         {
             var getFields = typeof(DataExportSvc).GetMethod(
