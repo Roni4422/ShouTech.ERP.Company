@@ -692,12 +692,19 @@ public static class RecycleBinSvc
 
     private static string BuildSqliteSnapshot(IReadOnlyList<string> columns, string rowAlias)
     {
-        var pairs = columns.SelectMany(column => new[]
+        // Keep each json_object call below SQLite's function-argument limit even for
+        // wide inventory/material tables, then merge chunks into one JSON snapshot.
+        var objects = columns.Chunk(20).Select(chunk =>
         {
-            "'" + column.Replace("'", "''", StringComparison.Ordinal) + "'",
-            $"{rowAlias}.{Quote(column)}"
-        });
-        return "json_object(" + string.Join(", ", pairs) + ")";
+            var pairs = chunk.SelectMany(column => new[]
+            {
+                "'" + column.Replace("'", "''", StringComparison.Ordinal) + "'",
+                $"{rowAlias}.{Quote(column)}"
+            });
+            return "json_object(" + string.Join(", ", pairs) + ")";
+        }).ToList();
+
+        return objects.Aggregate((left, right) => $"json_patch({left}, {right})");
     }
 
     private static async Task ExecuteSqliteAuditDdlAsync(
