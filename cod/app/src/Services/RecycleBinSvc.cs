@@ -46,11 +46,25 @@ public static class RecycleBinSvc
         string TableName,
         string DatasetKey,
         string[] LabelColumnCandidates,
-        string[] PrimaryKeyCandidates);
+        string[] PrimaryKeyCandidates,
+        bool CompanyIdIsCode = false,
+        bool DraftOnly = false);
 
     /// <summary>Master-data tables only. Transactional tables are intentionally excluded.</summary>
     private static readonly BinTableDefinition[] Catalog =
     [
+        new("sales_documents", "Sales invoices",
+            ["doc_no", "party_name", "doc_id"],
+            ["doc_id"], CompanyIdIsCode: true, DraftOnly: true),
+        new("purchase_documents", "Purchase invoices",
+            ["doc_no", "party_name", "doc_id"],
+            ["doc_id"], CompanyIdIsCode: true, DraftOnly: true),
+        new("receipt_vouchers", "Receipt vouchers",
+            ["voucher_no", "doc_no", "number", "description", "id"],
+            ["voucher_id", "receipt_voucher_id", "id"]),
+        new("payment_vouchers", "Payment vouchers",
+            ["voucher_no", "doc_no", "number", "description", "id"],
+            ["voucher_id", "payment_voucher_id", "id"]),
         new("products", "Products",
             ["product_name_ar", "product_name_en", "product_name", "name", "code", "barcode"],
             ["product_id", "id"]),
@@ -288,10 +302,21 @@ public static class RecycleBinSvc
             selectList.Add(Quote(deletedByColumn));
 
         var predicates = new List<string> { $"{Quote(softDeleteColumn)} = 1" };
-        if (companyColumn is not null && companyId is not null)
+        if (companyColumn is not null)
         {
+            var companyValue = definition.CompanyIdIsCode ? companyCode : companyId;
+            if (companyValue is null)
+                return Array.Empty<RecycleBinItem>();
             predicates.Add($"{Quote(companyColumn)} = @companyId");
-            AddParameter(command, "@companyId", companyId);
+            AddParameter(command, "@companyId", companyValue);
+        }
+        if (definition.DraftOnly)
+        {
+            var statusColumn = FindColumn(columns, "status");
+            if (statusColumn is null)
+                return Array.Empty<RecycleBinItem>();
+            predicates.Add($"{Quote(statusColumn)} = @draftStatus");
+            AddParameter(command, "@draftStatus", "Draft");
         }
 
         command.CommandText =
