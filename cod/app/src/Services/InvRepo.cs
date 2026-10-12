@@ -417,20 +417,13 @@ public static class InvRepo
         var cs = DatabaseRuntime.GetConnectionString()
             ?? throw new InvalidOperationException("No database connection.");
 
-        // The unique reservation blocks concurrent attempts to reverse the same source document.
+        // Reuse a failed reservation only when no reversal draft was ever created.
+        // A reservation linked to a draft is intentionally locked for reconciliation.
         using (var connection = Open(cs))
         using (var tx = connection.BeginTransaction())
         using (var cmd = connection.CreateCommand())
         {
             cmd.Transaction = tx;
-            cmd.CommandText = """
-                INSERT INTO document_reversals
-                (reversal_id, company_id, original_doc_kind, original_doc_id, reversal_doc_kind,
-                 reversal_doc_id, reason, actor, created_at, status)
-                VALUES ($rid, $company, $originalKind, $originalId, $reversalKind,
-                        NULL, $reason, $actor, $createdAt, 'Pending');
-                """;
-            Add(cmd, "$rid", Guid.NewGuid().ToString("N"));
             Add(cmd, "$company", company);
             Add(cmd, "$originalKind", originalKind.ToString());
             Add(cmd, "$originalId", originalDocId);
@@ -438,15 +431,44 @@ public static class InvRepo
             Add(cmd, "$reason", reason);
             Add(cmd, "$actor", string.IsNullOrWhiteSpace(userId) ? Environment.UserName : userId.Trim());
             Add(cmd, "$createdAt", DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
-            try { cmd.ExecuteNonQuery(); }
-            catch (DbException ex)
+
+            cmd.CommandText = """
+                UPDATE document_reversals
+                SET status='Pending', reversal_doc_kind=$reversalKind, reason=$reason,
+                    actor=$actor, created_at=$createdAt
+                WHERE company_id=$company AND original_doc_kind=$originalKind
+                  AND original_doc_id=$originalId AND status='Failed' AND reversal_doc_id IS NULL;
+                """;
+            var recovered = cmd.ExecuteNonQuery();
+            if (recovered == 0)
             {
-                throw new InvalidOperationException("A reversal is already in progress or has already been recorded for this invoice. Check reversal history before retrying.", ex);
+                cmd.Parameters.Clear();
+                cmd.CommandText = """
+                    INSERT INTO document_reversals
+                    (reversal_id, company_id, original_doc_kind, original_doc_id, reversal_doc_kind,
+                     reversal_doc_id, reason, actor, created_at, status)
+                    VALUES ($rid, $company, $originalKind, $originalId, $reversalKind,
+                            NULL, $reason, $actor, $createdAt, 'Pending');
+                    """;
+                Add(cmd, "$rid", Guid.NewGuid().ToString("N"));
+                Add(cmd, "$company", company);
+                Add(cmd, "$originalKind", originalKind.ToString());
+                Add(cmd, "$originalId", originalDocId);
+                Add(cmd, "$reversalKind", reversalKind.ToString());
+                Add(cmd, "$reason", reason);
+                Add(cmd, "$actor", string.IsNullOrWhiteSpace(userId) ? Environment.UserName : userId.Trim());
+                Add(cmd, "$createdAt", DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+                try { cmd.ExecuteNonQuery(); }
+                catch (DbException ex)
+                {
+                    throw new InvalidOperationException("A reversal is already in progress or has already been recorded for this invoice. Check reversal history before retrying.", ex);
+                }
             }
             tx.Commit();
         }
 
         long reversalId = 0;
+        long reversalDraftId = 0;
         try
         {
             var reversal = new InvDoc
@@ -478,8 +500,30 @@ public static class InvRepo
             };
 
             SaveDraft(reversal);
-            Post(reversal.DocId, reversal.Kind, userId);
-            reversalId = reversal.DocId;
+            reversalDraftId = reversal.DocId;
+
+            // Persist the draft ID before posting so a failure cannot leave an orphan
+            // draft while deleting the only record that prevents a duplicate reversal.
+            using (var linkConnection = Open(cs))
+            using (var link = linkConnection.CreateCommand())
+            {
+                link.CommandText = """
+                    UPDATE document_reversals
+                    SET reversal_doc_id=$draftId
+                    WHERE company_id=$company AND original_doc_kind=$originalKind
+                      AND original_doc_id=$originalId AND status='Pending'
+                      AND reversal_doc_id IS NULL;
+                    """;
+                Add(link, "$draftId", reversalDraftId);
+                Add(link, "$company", company);
+                Add(link, "$originalKind", originalKind.ToString());
+                Add(link, "$originalId", originalDocId);
+                if (link.ExecuteNonQuery() != 1)
+                    throw new InvalidOperationException("The reversal draft was saved but could not be linked to its reservation. Reconcile before retrying.");
+            }
+
+            Post(reversalDraftId, reversal.Kind, userId);
+            reversalId = reversalDraftId;
 
             using var connection = Open(cs);
             using var tx = connection.BeginTransaction();
@@ -509,16 +553,23 @@ public static class InvRepo
                     using var connection = Open(cs);
                     using var cleanup = connection.CreateCommand();
                     cleanup.CommandText = """
-                        DELETE FROM document_reversals
+                        UPDATE document_reversals
+                        SET status='Failed',
+                            reversal_doc_id=CASE
+                                WHEN reversal_doc_id IS NULL THEN $draftId
+                                ELSE reversal_doc_id
+                            END
                         WHERE company_id=$company AND original_doc_kind=$kind
-                          AND original_doc_id=$id AND status='Pending' AND reversal_doc_id IS NULL;
+                          AND original_doc_id=$id AND status='Pending';
                         """;
+                    object draftIdValue = reversalDraftId > 0 ? reversalDraftId : DBNull.Value;
+                    Add(cleanup, "$draftId", draftIdValue);
                     Add(cleanup, "$company", company);
                     Add(cleanup, "$kind", originalKind.ToString());
                     Add(cleanup, "$id", originalDocId);
                     cleanup.ExecuteNonQuery();
                 }
-                catch { /* Preserve original error for operator review. */ }
+                catch { /* Preserve the original error and keep the reservation if reconciliation failed. */ }
             }
             throw new InvalidOperationException("Invoice reversal did not complete successfully. Verify the invoice and reversal history before retrying.", ex);
         }
