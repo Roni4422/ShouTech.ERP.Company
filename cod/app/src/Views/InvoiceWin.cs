@@ -459,7 +459,7 @@ public sealed class InvoiceWin : BaseWin
         if (string.IsNullOrWhiteSpace(reason)) return;
         var confirm = MessageBox.Show(
             this,
-            $"A reversal document will be created for {current.DocNo}. The original invoice will remain unchanged.\\n\\nReason: {reason}\\n\\nContinue?",
+            $"A reversal document will be created for {current.DocNo}. The original invoice will remain unchanged.\n\nReason: {reason}\n\nContinue?",
             string.Equals(App.CurrentLanguageCode, "ar", StringComparison.OrdinalIgnoreCase) ? "تأكيد عكس الفاتورة" : "Confirm invoice reversal",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
