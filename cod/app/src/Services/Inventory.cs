@@ -3430,16 +3430,14 @@ internal static class MatRepo
 		EnsureGroupCardSchema(conn);
 		using var cmd = conn.CreateCommand();
 
-		var deletedValue = DatabaseRuntime.IsPostgreSql() ? "TRUE" : "1";
-		var activeValue = DatabaseRuntime.IsPostgreSql() ? "FALSE" : "0";
-		cmd.CommandText = $@"
+		cmd.CommandText = @"
 			UPDATE material_groups
-			SET is_deleted = {deletedValue},
+			SET is_deleted = 1,
 			    deleted_at = $deletedAt,
 			    deleted_by = $deletedBy
 			WHERE company_id = $co
 			  AND group_id = $id
-			  AND COALESCE(is_deleted, {activeValue}) = {activeValue};";
+			  AND COALESCE(is_deleted, 0) = 0;";
 
 		Add(cmd, "$co", companyCode);
 		Add(cmd, "$id", id);
