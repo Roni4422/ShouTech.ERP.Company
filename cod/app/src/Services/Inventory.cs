@@ -1427,7 +1427,9 @@ internal static class MatRepo
         EnsureSchema();
         using var connection = Open(cs);
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE materials SET is_deleted=1, deleted_at=$deletedAt, deleted_by=$deletedBy, updated_at=CURRENT_TIMESTAMP WHERE company_id=$company AND material_id=$id AND COALESCE(is_deleted,0)=0";
+        var deletedValue = DatabaseRuntime.IsPostgreSql() ? "TRUE" : "1";
+        var activeValue = DatabaseRuntime.IsPostgreSql() ? "FALSE" : "0";
+        command.CommandText = $"UPDATE materials SET is_deleted={deletedValue}, deleted_at=$deletedAt, deleted_by=$deletedBy, updated_at=CURRENT_TIMESTAMP WHERE company_id=$company AND material_id=$id AND COALESCE(is_deleted,{activeValue})={activeValue}";
         Add(command, "$company", companyCode);
         Add(command, "$id", id);
         Add(command, "$deletedAt", DateTimeOffset.UtcNow);
