@@ -99,6 +99,22 @@ namespace Kern.Tests
             Assert.Equal(expected, result);
         }
 
+        [Theory]
+        [InlineData("materials", true)]
+        [InlineData("customers", true)]
+        [InlineData("sales_documents", true)]
+        [InlineData("some_new_company_table", false)]
+        public void DataExportSvc_ShouldRecognizeLegacyCompanyCodeScopedTables(string tableName, bool expected)
+        {
+            var isScoped = typeof(DataExportSvc).GetMethod(
+                "IsCompanyCodeScopedTable",
+                BindingFlags.Static | BindingFlags.NonPublic)!;
+
+            var result = (bool)isScoped.Invoke(null, new object[] { tableName })!;
+
+            Assert.Equal(expected, result);
+        }
+
         [Fact]
         public void DataExportSvc_ShouldExportOnlyMaterialCardFields()
         {
