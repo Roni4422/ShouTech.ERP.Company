@@ -3423,13 +3423,17 @@ internal static class MatRepo
 
 		cmd.CommandText = @"
 			UPDATE material_groups
-			SET is_deleted = 1
+			SET is_deleted = 1,
+			    deleted_at = $deletedAt,
+			    deleted_by = $deletedBy
 			WHERE company_id = $co
 			  AND group_id = $id
 			  AND COALESCE(is_deleted, 0) = 0;";
 
 		Add(cmd, "$co", companyCode);
 		Add(cmd, "$id", id);
+		Add(cmd, "$deletedAt", DateTimeOffset.UtcNow);
+		Add(cmd, "$deletedBy", AppState.CurrentUser?.Username);
 
 		var affected = cmd.ExecuteNonQuery();
 		if (affected == 0)
