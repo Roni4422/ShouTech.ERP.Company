@@ -1271,9 +1271,18 @@ public static class DataExportSvc
     }
 
     private static string AddAndCondition(string filter, string condition)
-        => string.IsNullOrWhiteSpace(filter)
-            ? " WHERE " + condition
-            : filter + " AND " + condition;
+    {
+        if (string.IsNullOrWhiteSpace(filter))
+            return " WHERE (" + condition + ")";
+
+        var whereIndex = filter.IndexOf(" WHERE ", StringComparison.OrdinalIgnoreCase);
+        if (whereIndex < 0)
+            return filter + " WHERE (" + condition + ")";
+
+        var prefix = filter[..whereIndex];
+        var existingCondition = filter[(whereIndex + 7)..];
+        return prefix + " WHERE (" + existingCondition + ") AND (" + condition + ")";
+    }
 
     private static string BuildFilter(DataExportOption option)
     {
