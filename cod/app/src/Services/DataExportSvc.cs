@@ -440,8 +440,10 @@ public static class DataExportSvc
                 row.TryGetValue(model.Columns[index].Key, out var value) ? value : null))
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase))
             .ToArray();
+        var fieldTypes = model.Columns.ToDictionary(
+            column => column.HeaderTextKey, column => column.Type.ToString(), StringComparer.OrdinalIgnoreCase);
         return SteiSvc.ExportDatasetAsync(
-            path, password, option.Key, option.TableName, rows, fields, progress, ct);
+            path, password, option.Key, option.TableName, rows, fields, fieldTypes, progress, ct);
     }
 
     internal static Task<SteiResult> ImportDatasetPackageAsync(
@@ -456,6 +458,10 @@ public static class DataExportSvc
         if (option.IsSystemInfo || !Catalog.Any(x => x.Key == option.Key && x.Filter == option.Filter &&
                 x.TableCandidates.Contains(option.TableName, StringComparer.OrdinalIgnoreCase)))
             throw new InvalidOperationException("The selected dataset cannot be imported from a package.");
+        var expectedFileName = Path.GetFileNameWithoutExtension(GetDatasetPackageFileName(option));
+        var actualFileName = Path.GetFileNameWithoutExtension(path);
+        if (!string.Equals(actualFileName, expectedFileName, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"This package must be named '{expectedFileName}.stei' for the selected dataset. The file name is an additional validation check; internal package metadata is also verified.");
         return SteiSvc.ImportDatasetAsync(
             path, password, option.Key, option.TableName, simulation, progress, ct);
     }
@@ -463,22 +469,67 @@ public static class DataExportSvc
     public static string GetDatasetPackageFileName(DataExportOption option)
         => $"{option.Key switch
         {
+            "Products" => "mat",
+            "Customers" => "cust",
+            "Suppliers" => "supp",
+            "Accounts" => "acct",
+            "Company" => "comp",
+            "Branches" => "br",
             "Sales" => "inv",
-            "SalesLines" => "inv-lines",
-            "SalesReturns" => "return",
-            "SalesReturnLines" => "return-lines",
+            "SalesLines" => "invl",
+            "SalesReturns" => "ret",
+            "SalesReturnLines" => "retl",
             "Purchases" => "pur",
-            "PurchaseLines" => "pur-lines",
-            "PurchaseReturns" => "pur-return",
-            "PurchaseReturnLines" => "pur-return-lines",
-            "Products" or "ProductClasses" or "ProductAttributes" or "ProductClassAttributes" or "ProductSuppliers" or "ProductBarcodes" or "ProductUnits" or "Brands" => "items",
-            "Customers" or "CustomerGroups" or "CustomerContacts" or "CustomerAddresses" => "customers",
-            "Accounts" or "AccountTypes" => "accounts",
-            "SalesRepresentatives" or "SalesRepresentativeTargets" => "reps",
-            "Employees" or "Departments" or "JobTitles" => "employees",
-            "Company" or "Branches" => "company",
-            "Suppliers" or "SupplierGroups" or "SupplierContacts" => "suppliers",
-            "Warehouses" or "WarehouseLocations" or "WarehouseZones" or "WarehouseTypes" => "warehouse",
+            "PurchaseLines" => "purl",
+            "PurchaseReturns" => "puret",
+            "PurchaseReturnLines" => "purlt",
+            "ProductClasses" => "matgrp",
+            "ProductAttributes" => "matattr",
+            "ProductClassAttributes" => "grpattr",
+            "ProductSuppliers" => "matsupp",
+            "ProductBarcodes" => "barcode",
+            "ProductUnits" => "matunit",
+            "Brands" => "brand",
+            "CustomerGroups" => "custgrp",
+            "CustomerContacts" => "custcon",
+            "CustomerAddresses" => "custaddr",
+            "SupplierGroups" => "suppgrp",
+            "SupplierContacts" => "suppcon",
+            "SalesRepresentatives" => "salesrep",
+            "SalesRepresentativeTargets" => "reptgt",
+            "Employees" => "emp",
+            "Departments" => "dept",
+            "JobTitles" => "job",
+            "Warehouses" => "wh",
+            "WarehouseLocations" => "whloc",
+            "WarehouseZones" => "whzone",
+            "WarehouseTypes" => "whtype",
+            "Units" => "unit",
+            "FiscalYears" => "fyear",
+            "Currencies" => "curr",
+            "CurrencyRates" => "fxrate",
+            "Banks" => "bank",
+            "BankAccounts" => "bankacct",
+            "TaxCodes" => "tax",
+            "OpeningStock" => "opstock",
+            "StockMovements" => "stockmv",
+            "StockAdjustments" => "stockadj",
+            "StockAdjustmentLines" => "stockadjl",
+            "StockReservations" => "stockres",
+            "Batches" => "batch",
+            "SerialNumbers" => "serial",
+            "ValuationMethods" => "valmeth",
+            "ProductValuation" => "valprod",
+            "CostLayers" => "costlay",
+            "ValuationHistory" => "valhist",
+            "ProductionOrders" => "prodord",
+            "ProductionOrderLines" => "prodordl",
+            "WorkCenters" => "workctr",
+            "ReceiptVouchers" => "rcpt",
+            "PaymentVouchers" => "pay",
+            "PosTerminals" => "posterm",
+            "PosSessions" => "posess",
+            "AccountTypes" => "accttype",
             _ => option.Key.ToLowerInvariant()
         }}.stei";
 
