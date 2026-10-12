@@ -449,8 +449,8 @@ internal static class SteiSvc
         }
         else
         {
-            if (replaceDatasetMode && IsProtectedAccountingDataset(expectedDatasetKey))
-                throw new InvalidOperationException("Replace mode is prohibited for posted accounting documents, vouchers, stock movements, and valuation history.");
+            if (replaceDatasetMode && !IsReplaceSupportedDataset(expectedDatasetKey))
+                throw new InvalidOperationException("Replace mode is limited to approved master-data datasets with company-scoped soft deletion. This dataset must use update/insert mode.");
 
             var expectedFields = manifest.DatasetFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
             var packagedFields = tables[expectedTableName].FirstOrDefault()?.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase)
@@ -954,7 +954,17 @@ ORDER BY kcu.ordinal_position;";
             or "Purchases" or "PurchaseLines" or "PurchaseReturns" or "PurchaseReturnLines"
             or "ReceiptVouchers" or "PaymentVouchers" or "StockMovements"
             or "StockAdjustments" or "StockAdjustmentLines" or "OpeningStock"
-            or "CostLayers" or "ValuationHistory" or "ProductionOrders" or "ProductionOrderLines";
+            or "CostLayers" or "ValuationHistory" or "ProductionOrders" or "ProductionOrderLines"
+            or "PosSessions" or "StockReservations" or "Batches" or "SerialNumbers" or "ProductValuation";
+
+    private static bool IsReplaceSupportedDataset(string key)
+        => key is "Products" or "Customers" or "Suppliers" or "ProductClasses"
+            or "ProductAttributes" or "ProductClassAttributes" or "ProductSuppliers"
+            or "ProductBarcodes" or "ProductUnits" or "Brands" or "CustomerGroups"
+            or "CustomerContacts" or "CustomerAddresses" or "SupplierGroups"
+            or "SupplierContacts" or "SalesRepresentatives" or "Employees"
+            or "Departments" or "JobTitles" or "Warehouses" or "WarehouseLocations"
+            or "WarehouseZones" or "WarehouseTypes" or "Units";
 
     private static async Task UpsertDatasetRowAsync(
         DbConnection db, DbTransaction tx, string provider, string table,
