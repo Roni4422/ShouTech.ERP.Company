@@ -99,6 +99,7 @@ internal sealed class SteiManifest
     public string DatasetTableName { get; set; } = "";
     public List<string> DatasetFields { get; set; } = new();
     public Dictionary<string, string> DatasetFieldTypes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, List<string>> TableFields { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public int TableCount { get; set; }
     public long RowCount { get; set; }
     public string PayloadHash { get; set; } = "";
@@ -232,6 +233,7 @@ internal static class SteiSvc
         await db.OpenAsync(ct);
 
         var manifest = BuildManifest(provider);
+        manifest.OperationType = "FullDatabaseExport";
         var package = new SteiPackage { Manifest = manifest };
         var tables = await GetTablesAsync(db, provider, ct);
         var total = 0L;
@@ -243,6 +245,8 @@ internal static class SteiSvc
             if (Excluded.Contains(table))
                 continue;
             var columns = await GetColumnsAsync(db, provider, table, ct);
+            if (columns.Count > 0)
+                manifest.TableFields[table] = columns.ToList();
             if (columns.Count == 0)
                 continue;
             var rows = await ReadRowsAsync(db, provider, table, columns, progress, total, ct);
