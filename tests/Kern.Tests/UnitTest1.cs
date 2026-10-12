@@ -23,6 +23,52 @@ namespace Kern.Tests
     public class UnitTest1
     {
         [Fact]
+        public async Task RecycleBinSvc_ShouldDetectBooleanAndIntegerSoftDeleteColumns()
+        {
+            var settingsField = typeof(AppCfgSvc).GetField("_settings", BindingFlags.NonPublic | BindingFlags.Static)!;
+            var oldSettings = settingsField.GetValue(null);
+            try
+            {
+                settingsField.SetValue(null, new AppSetng
+                {
+                    Database = new DatabaseSettings { DefaultProvider = "Sqlite" },
+                    ConnectionStrings = new Dictionary<string, ConnectionStringSettings>
+                    {
+                        ["Default"] = new()
+                        {
+                            Provider = "Sqlite",
+                            ConnectionString = "Data Source=:memory:"
+                        }
+                    }
+                });
+
+                await using var connection = new SqliteConnection("Data Source=:memory:");
+                await connection.OpenAsync();
+                using (var create = connection.CreateCommand())
+                {
+                    create.CommandText = "CREATE TABLE flag_types (bool_flag BOOLEAN, int_flag INTEGER);";
+                    create.ExecuteNonQuery();
+                }
+
+                var detector = typeof(RecycleBinSvc).GetMethod(
+                    "IsBooleanColumnAsync",
+                    BindingFlags.NonPublic | BindingFlags.Static)!;
+
+                var booleanTask = (Task<bool>)detector.Invoke(
+                    null, new object[] { connection, "flag_types", "bool_flag", CancellationToken.None })!;
+                var integerTask = (Task<bool>)detector.Invoke(
+                    null, new object[] { connection, "flag_types", "int_flag", CancellationToken.None })!;
+
+                Assert.True(await booleanTask);
+                Assert.False(await integerTask);
+            }
+            finally
+            {
+                settingsField.SetValue(null, oldSettings);
+            }
+        }
+
+        [Fact]
         public void NullToVisibilityConverter_WhenConvertBackIsCalled_ShouldReturnFalseWithoutThrowing()
         {
             var converter = new NullToVisibilityConverter();
