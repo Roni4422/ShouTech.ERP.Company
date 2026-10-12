@@ -427,6 +427,9 @@ internal static class SteiSvc
 
         var tables = JsonSerializer.Deserialize<Dictionary<string, List<Dictionary<string, JsonElement>>>>(payload)
                      ?? throw new InvalidDataException("The STEI payload is empty or invalid.");
+        var actualRowCount = tables.Values.Sum(rows => (long)rows.Count);
+        if (manifest.TableCount != tables.Count || manifest.RowCount != actualRowCount)
+            throw new InvalidDataException("The package manifest table/row counts do not match the encrypted payload.");
         if (expectedDatasetKey == null)
         {
             if (manifest.DataScope.StartsWith("Dataset:", StringComparison.Ordinal))
@@ -443,12 +446,13 @@ internal static class SteiSvc
         }
         else
         {
+            var expectedFields = manifest.DatasetFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
             var packagedFields = tables[expectedTableName].FirstOrDefault()?.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase)
                 ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (manifest.DatasetFields.Count == 0 ||
-                !manifest.DatasetFields.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(packagedFields) ||
-                manifest.DatasetFieldTypes.Keys.Any(field => !packagedFields.Contains(field)))
-                throw new InvalidDataException("The encrypted package field metadata does not match its data payload.");
+            if (expectedFields.Count == 0 || !expectedFields.SetEquals(packagedFields) ||
+                tables[expectedTableName].Any(row => !row.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(expectedFields)) ||
+                (manifest.DatasetFieldTypes.Count > 0 && !manifest.DatasetFieldTypes.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(expectedFields)))
+                throw new InvalidDataException("The encrypted package field metadata does not match every row in its data payload.");
         }
 
         var provider = DatabaseRuntime.GetProvider();
