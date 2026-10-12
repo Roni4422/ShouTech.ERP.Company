@@ -1411,15 +1411,26 @@ internal static class MatRepo
 
     public static void SoftDelete(long id)
     {
+        if (id <= 0)
+            throw new ArgumentOutOfRangeException(nameof(id), "Material id must be positive.");
+
+        var companyCode = AppState.CurrentCompanyCode;
+        if (string.IsNullOrWhiteSpace(companyCode))
+            throw new InvalidOperationException("A company must be selected before deleting a material.");
+
         var cs = DatabaseRuntime.GetConnectionString();
-        if (string.IsNullOrWhiteSpace(cs)) return;
+        if (string.IsNullOrWhiteSpace(cs))
+            throw new InvalidOperationException("The company database connection is not configured.");
+
         EnsureSchema();
         using var connection = Open(cs);
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE materials SET status='Inactive', is_deleted=1, updated_at=CURRENT_TIMESTAMP WHERE company_id=$company AND material_id=$id";
-        Add(command, "$company", AppState.CurrentCompanyCode ?? string.Empty);
+        command.CommandText = "UPDATE materials SET is_deleted=1, updated_at=CURRENT_TIMESTAMP WHERE company_id=$company AND material_id=$id AND COALESCE(is_deleted,0)=0";
+        Add(command, "$company", companyCode);
         Add(command, "$id", id);
-        command.ExecuteNonQuery();
+        var affected = command.ExecuteNonQuery();
+        if (affected == 0)
+            throw new InvalidOperationException("The material was not found in the selected company or has already been deleted.");
     }
 
     private static bool CodeExistsOn(DbConnection connection, DbTransaction tx, string code, long? excludeId)
@@ -3395,35 +3406,34 @@ internal static class MatRepo
 
 	public static void SoftDeleteGroup(long id)
 	{
-		try
-		{
-			var cs = DatabaseRuntime.GetConnectionString();
+		if (id <= 0)
+			throw new ArgumentOutOfRangeException(nameof(id), "Material group id must be positive.");
 
-			if (string.IsNullOrWhiteSpace(cs))
-				return;
+		var companyCode = AppState.CurrentCompanyCode;
+		if (string.IsNullOrWhiteSpace(companyCode))
+			throw new InvalidOperationException("A company must be selected before deleting a material group.");
 
-			using var conn = Open(cs);
-			using var cmd = conn.CreateCommand();
+		var cs = DatabaseRuntime.GetConnectionString();
+		if (string.IsNullOrWhiteSpace(cs))
+			throw new InvalidOperationException("The company database connection is not configured.");
 
-			cmd.CommandText = @"
-				UPDATE material_groups
-				SET is_deleted = 1
-				WHERE company_id = $co
-				  AND group_id = $id;";
+		EnsureSchema();
+		using var conn = Open(cs);
+		using var cmd = conn.CreateCommand();
 
-			Add(
-				cmd,
-				"$co",
-				AppState.CurrentCompanyCode ?? "");
+		cmd.CommandText = @"
+			UPDATE material_groups
+			SET is_deleted = 1
+			WHERE company_id = $co
+			  AND group_id = $id
+			  AND COALESCE(is_deleted, 0) = 0;";
 
-			Add(cmd, "$id", id);
+		Add(cmd, "$co", companyCode);
+		Add(cmd, "$id", id);
 
-			cmd.ExecuteNonQuery();
-		}
-		catch
-		{
-			// Existing project behavior.
-		}
+		var affected = cmd.ExecuteNonQuery();
+		if (affected == 0)
+			throw new InvalidOperationException("The material group was not found in the selected company or has already been deleted.");
 	}
 	}
 }
