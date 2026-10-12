@@ -599,15 +599,36 @@ public partial class DatWin : Window
                         Title, MessageBoxButton.YesNo, MessageBoxImage.Warning);
                     if (confirmCompany != MessageBoxResult.Yes) return;
                 }
+                var preflight = steiOption.Key == "$FullPackage"
+                    ? await SteiSvc.ImportAsync(path, password, simulation: true, progress: progress, ct: CancellationToken.None)
+                    : await DataExportSvc.ImportDatasetPackageAsync(path, password, steiOption, simulation: true, progress: progress, ct: CancellationToken.None);
+                if (!preflight.Success)
+                {
+                    ShowResult(preflight, path, false);
+                    ResultStatusText.Text = L("PreflightFailed", "Pre-import validation failed");
+                    return;
+                }
+
+                ResultTextBox.Text = string.Join(Environment.NewLine,
+                    L("PreflightPassed", "Pre-import structural validation passed."),
+                    $"{L("Rows", "Rows")}: {preflight.Rows.ToString("N0", CultureInfo.CurrentCulture)}",
+                    $"{L("Tables", "Tables")}: {preflight.Tables}",
+                    L("PreflightNote", "The final import still checks database constraints; no data has been written yet."));
+                _lastDetails = ResultTextBox.Text;
+
                 if (steiOption.Key == "$FullPackage")
                 {
-                    var confirmFull = MessageBox.Show(L("FullPackageConfirm", "This is a full database package. Importing it can affect many tables. Continue only if you trust the source and have a current backup."), Title, MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                    var confirmFull = MessageBox.Show(L("FullPackageConfirm", "Structural validation passed. This is a full database package and may affect many tables. Continue only if you trust the source and have a current backup."), Title, MessageBoxButton.YesNo, MessageBoxImage.Warning);
                     if (confirmFull != MessageBoxResult.Yes) return;
                     result = await SteiSvc.ImportAsync(path, password, simulation: false, progress: progress, ct: CancellationToken.None);
                 }
                 else
                 {
-                    result = await DataExportSvc.ImportDatasetPackageAsync(path, password, steiOption, progress: progress, ct: CancellationToken.None);
+                    var confirmDataset = MessageBox.Show(
+                        L("DatasetImportConfirm", $"Validation passed for '{steiOption.DisplayName}'. Import {preflight.Rows} rows into the active company?"),
+                        Title, MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    if (confirmDataset != MessageBoxResult.Yes) return;
+                    result = await DataExportSvc.ImportDatasetPackageAsync(path, password, steiOption, simulation: false, progress: progress, ct: CancellationToken.None);
                 }
                 ShowResult(result, path, false);
             }
