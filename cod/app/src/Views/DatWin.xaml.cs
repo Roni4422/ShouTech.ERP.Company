@@ -130,6 +130,13 @@ public partial class DatWin : Window
         StructuredExportHintText.Text = L("ChooseDataset", "Select a data type to export as Excel, PDF or an encrypted STEI package. Excel files include a hidden encrypted type marker; edit data cells, not column headers.");
     }
 
+    private static bool IsProtectedSteiDataset(string key)
+        => key is "Sales" or "SalesLines" or "SalesReturns" or "SalesReturnLines"
+            or "Purchases" or "PurchaseLines" or "PurchaseReturns" or "PurchaseReturnLines"
+            or "ReceiptVouchers" or "PaymentVouchers" or "StockMovements"
+            or "StockAdjustments" or "StockAdjustmentLines" or "OpeningStock"
+            or "CostLayers" or "ValuationHistory" or "ProductionOrders" or "ProductionOrderLines";
+
     private void ApplyMode()
     {
         ModeTabs.SelectedItem = _mode switch
@@ -624,11 +631,26 @@ public partial class DatWin : Window
                 }
                 else
                 {
+                    if (ImportReplaceRadio?.IsChecked == true)
+                    {
+                        MessageBox.Show(
+                            L("SteiReplaceUnavailable", "Replace / move-missing-rows-to-bin is currently available only for ShouTech Excel imports. For encrypted STEI packages, reference/master data is updated or inserted, while accounting and inventory history datasets are insert-only to preserve the audit trail."),
+                            Title, MessageBoxButton.OK, MessageBoxImage.Information);
+                        return;
+                    }
+
+                    var actor = GetCurrentUserName();
+                    var company = GetCurrentCompanyCode();
+                    var startedAt = DateTime.Now;
+                    LogOp("ImportSTEI.Dataset.Start",
+                        $"key={steiOption.Key} | mode={(IsProtectedSteiDataset(steiOption.Key) ? "InsertOnly" : "Upsert")} | user={actor} | company={company} | at={startedAt:yyyy-MM-dd HH:mm:ss} | file={path}");
                     var confirmDataset = MessageBox.Show(
-                        L("DatasetImportConfirm", $"Validation passed for '{steiOption.DisplayName}'. Import {preflight.Rows} rows into the active company?"),
+                        L("DatasetImportConfirm", $"Validation passed for '{steiOption.DisplayName}'. Import {preflight.Rows} rows into the active company? Reference data will be updated/inserted; posted accounting and inventory-history datasets are insert-only."),
                         Title, MessageBoxButton.YesNo, MessageBoxImage.Question);
                     if (confirmDataset != MessageBoxResult.Yes) return;
                     result = await DataExportSvc.ImportDatasetPackageAsync(path, password, steiOption, simulation: false, progress: progress, ct: CancellationToken.None);
+                    LogOp("ImportSTEI.Dataset",
+                        $"key={steiOption.Key} | mode={(IsProtectedSteiDataset(steiOption.Key) ? "InsertOnly" : "Upsert")} | success={result.Success} | rows={result.Rows} | failedRows={result.FailedRows} | failedTables={result.FailedTables} | user={actor} | company={company} | at={DateTime.Now:yyyy-MM-dd HH:mm:ss} | file={path}");
                 }
                 ShowResult(result, path, false);
             }
