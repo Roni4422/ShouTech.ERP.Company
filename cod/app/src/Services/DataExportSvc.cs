@@ -584,6 +584,8 @@ public static class DataExportSvc
 
                 try
                 {
+                    if (replaceMode)
+                        EnsureReplaceKeysArePresent(values, keyColumns);
                     ValidateDatasetRow(option, values);
                     processed += await UpsertExcelRowAsync(
                         connection, transaction, option.TableName, values, columns, keyColumns, ct);
@@ -616,6 +618,18 @@ public static class DataExportSvc
             await transaction.RollbackAsync(CancellationToken.None);
             throw;
         }
+    }
+
+    private static void EnsureReplaceKeysArePresent(
+        IReadOnlyDictionary<string, object?> values,
+        IReadOnlyList<string> keyColumns)
+    {
+        if (keyColumns.Any(key =>
+                !values.TryGetValue(key, out var value) ||
+                value is null or DBNull ||
+                string.IsNullOrWhiteSpace(Convert.ToString(value, CultureInfo.InvariantCulture))))
+            throw new InvalidDataException(
+                "Replace mode requires every primary-key field to be populated. Use Upsert mode to add rows with generated IDs.");
     }
 
     private static string BuildCompositeKey(Dictionary<string, object?> values, IReadOnlyList<string> keyColumns)
