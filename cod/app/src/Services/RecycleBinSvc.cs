@@ -1,6 +1,7 @@
 using System.Data.Common;
 using System.Globalization;
 using System.Text.RegularExpressions;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Npgsql;
 using ShouTech.App;
@@ -112,6 +113,7 @@ public static class RecycleBinSvc
 
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureDeletionAuditTableAsync(connection, cancellationToken).ConfigureAwait(false);
 
         var existingTables = await GetTableNamesAsync(connection, cancellationToken).ConfigureAwait(false);
         var companyId = await FindCompanyIdAsync(connection, companyCode, cancellationToken).ConfigureAwait(false);
@@ -196,6 +198,7 @@ public static class RecycleBinSvc
         {
             await using var connection = CreateConnection();
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await EnsureDeletionAuditTableAsync(connection, cancellationToken).ConfigureAwait(false);
 
             var columns = await GetColumnNamesAsync(connection, item.TableName, cancellationToken)
                 .ConfigureAwait(false);
@@ -254,6 +257,8 @@ public static class RecycleBinSvc
             if (affected <= 0)
                 return Failed(item, "No matching soft-deleted row was found.");
 
+            await WriteAuditEventAsync(connection, item, "RESTORE", Environment.UserName,
+                "Restore from recycle bin", cancellationToken).ConfigureAwait(false);
             LogOperation("Restore",
                 $"table={item.TableName} pk={item.PrimaryKeyValue} label={item.DisplayLabel} company={item.CompanyCode}");
 
@@ -291,6 +296,7 @@ public static class RecycleBinSvc
         {
             await using var connection = CreateConnection();
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await EnsureDeletionAuditTableAsync(connection, cancellationToken).ConfigureAwait(false);
 
             var columns = await GetColumnNamesAsync(connection, item.TableName, cancellationToken)
                 .ConfigureAwait(false);
@@ -335,6 +341,8 @@ public static class RecycleBinSvc
             if (affected <= 0)
                 return Failed(item, "No matching bin row was found to purge.");
 
+            await WriteAuditEventAsync(connection, item, "PERMANENT_DELETE", Environment.UserName,
+                "Permanent deletion from recycle bin", cancellationToken).ConfigureAwait(false);
             LogOperation("Purge",
                 $"table={item.TableName} pk={item.PrimaryKeyValue} label={item.DisplayLabel} company={item.CompanyCode}");
 
@@ -441,6 +449,67 @@ public static class RecycleBinSvc
         }
 
         return items;
+    }
+
+    /// <summary>Durable audit hook for application delete handlers.</summary>
+    public static async Task RecordDeletionAsync(
+        string companyCode, string tableName, string recordKey, string actor,
+        string method, string? reason, string? recordSnapshot = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(companyCode) || !SafeIdentifier.IsMatch(tableName))
+            throw new ArgumentException("A company and valid table name are required.");
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureDeletionAuditTableAsync(connection, cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "INSERT INTO deletion_audit_log " +
+            "(event_id, company_code, table_name, record_key, action_type, actor, occurred_at, method, reason, record_snapshot) " +
+            "VALUES (@eventId, @company, @table, @recordKey, 'DELETE', @actor, @occurredAt, @method, @reason, @snapshot)";
+        AddParameter(command, "@eventId", Guid.NewGuid().ToString("D"));
+        AddParameter(command, "@company", companyCode);
+        AddParameter(command, "@table", tableName);
+        AddParameter(command, "@recordKey", recordKey);
+        AddParameter(command, "@actor", string.IsNullOrWhiteSpace(actor) ? "unknown" : actor);
+        AddParameter(command, "@occurredAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+        AddParameter(command, "@method", string.IsNullOrWhiteSpace(method) ? "SOFT_DELETE" : method);
+        AddParameter(command, "@reason", (object?)reason ?? DBNull.Value);
+        AddParameter(command, "@snapshot", (object?)recordSnapshot ?? DBNull.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task EnsureDeletionAuditTableAsync(DbConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "CREATE TABLE IF NOT EXISTS deletion_audit_log (" +
+            "event_id TEXT PRIMARY KEY, company_code TEXT NOT NULL, table_name TEXT NOT NULL, " +
+            "record_key TEXT NOT NULL, action_type TEXT NOT NULL, actor TEXT NOT NULL, " +
+            "occurred_at TEXT NOT NULL, method TEXT NOT NULL, reason TEXT, record_snapshot TEXT)";
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task WriteAuditEventAsync(
+        DbConnection connection, RecycleBinItem item, string action, string actor,
+        string details, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "INSERT INTO deletion_audit_log " +
+            "(event_id, company_code, table_name, record_key, action_type, actor, occurred_at, method, reason, record_snapshot) " +
+            "VALUES (@eventId, @company, @table, @recordKey, @action, @actor, @occurredAt, @method, @reason, @snapshot)";
+        AddParameter(command, "@eventId", Guid.NewGuid().ToString("D"));
+        AddParameter(command, "@company", item.CompanyCode);
+        AddParameter(command, "@table", item.TableName);
+        AddParameter(command, "@recordKey", item.PrimaryKeyValue);
+        AddParameter(command, "@action", action);
+        AddParameter(command, "@actor", string.IsNullOrWhiteSpace(actor) ? "unknown" : actor);
+        AddParameter(command, "@occurredAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+        AddParameter(command, "@method", action);
+        AddParameter(command, "@reason", details);
+        AddParameter(command, "@snapshot", JsonSerializer.Serialize(new
+        {
+            item.DatasetKey, item.DisplayLabel, item.DeletedAt, item.DeletedBy
+        }));
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static void ValidateCatalogItem(RecycleBinItem item)
