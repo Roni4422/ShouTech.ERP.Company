@@ -347,7 +347,15 @@ namespace ShouTech.App
             {
                 SchemaBootstrapper.EnsureSchema();
                 // Install database-level audit triggers before any business screen can mutate data.
-                RecycleBinSvc.InitializeAuditInfrastructureAsync().GetAwaiter().GetResult();
+                // A missing/unselected company database must not prevent the application from starting.
+                try
+                {
+                    RecycleBinSvc.InitializeAuditInfrastructureAsync().GetAwaiter().GetResult();
+                }
+                catch (Exception auditEx)
+                {
+                    try { AppHost.Logging?.LogWarning("Audit", "Delete-audit bootstrap deferred until a company database is available: " + auditEx.Message); } catch { }
+                }
             }
             catch (Exception ex)
             {
