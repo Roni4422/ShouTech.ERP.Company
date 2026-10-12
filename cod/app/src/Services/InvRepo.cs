@@ -391,7 +391,7 @@ public static class InvRepo
     /// <summary>Creates a linked credit/return document for a posted invoice without deleting the source.</summary>
     public static long ReversePostedInvoice(long originalDocId, InvDocKind originalKind, string reason, string userId)
     {
-        if (originalDocId <= 0) throw new ArgumentOutOfRangeException(nameof(originalDocId));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(originalDocId);
         if (string.IsNullOrWhiteSpace(reason)) throw new ArgumentException("A reversal reason is required.", nameof(reason));
         reason = reason.Trim();
         if (reason.Length > 1000) throw new ArgumentException("The reversal reason cannot exceed 1000 characters.", nameof(reason));
