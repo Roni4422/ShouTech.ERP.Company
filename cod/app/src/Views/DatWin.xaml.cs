@@ -21,6 +21,10 @@ public partial class DatWin : Window
     private ExchangeMode _mode = ExchangeMode.Import;
     private string _lastDetails = string.Empty;
     private string _structuredExportFormat = "xlsx";
+    private string? _verifiedPackagePath;
+    private string? _verifiedPackageId;
+    private string? _verifiedPackagePassword;
+    private string? _verifiedPackageDatasetKey;
     private const string LogCategory = "DataExchange";
 
     public DatWin() : this(ExchangeMode.Import)
@@ -254,7 +258,7 @@ public partial class DatWin : Window
         }
 
         ImportPathBox.Text = dialog.FileName;
-        ImportPackageInfoBox.Clear();
+        ClearVerifiedPackageInfo();
         var extensionNeedsPassword = string.Equals(extension, ".stei", StringComparison.OrdinalIgnoreCase);
         ImportPasswordGrid.Visibility = extensionNeedsPassword ? Visibility.Visible : Visibility.Collapsed;
         ImportDatasetBox.IsEnabled = true;
@@ -263,6 +267,24 @@ public partial class DatWin : Window
         ResultStatusText.Text = L("Ready", "Ready");
         ResultTextBox.Text = string.Empty;
         DetailsButton.IsEnabled = false;
+    }
+
+    private void ClearVerifiedPackageInfo()
+    {
+        _verifiedPackagePath = null;
+        _verifiedPackageId = null;
+        _verifiedPackagePassword = null;
+        _verifiedPackageDatasetKey = null;
+    }
+
+    private void ImportPasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (_verifiedPackagePassword != ImportPasswordBox.Password)
+        {
+            ClearVerifiedPackageInfo();
+            if (ImportPackageInfoBox != null)
+                ImportPackageInfoBox.Text = L("PackageNeedsRecheck", "Password changed. Read and verify the package details again before importing.");
+        }
     }
 
     private async void ReadPackageInfo_Click(object sender, RoutedEventArgs e)
@@ -286,6 +308,8 @@ public partial class DatWin : Window
         {
             var info = await SteiSvc.ReadDatasetPackageInfoAsync(path, password, CancellationToken.None);
             var isDataset = info.DataScope.StartsWith("Dataset:", StringComparison.Ordinal);
+            if (isDataset && (string.IsNullOrWhiteSpace(info.DatasetKey) || string.IsNullOrWhiteSpace(info.DatasetTableName)))
+                throw new InvalidDataException("The package is missing required dataset identity metadata.");
             var matchedOption = isDataset
                 ? ImportDatasetBox.Items.Cast<object>().OfType<DataExportOption>()
                     .FirstOrDefault(option => string.Equals(option.Key, info.DatasetKey, StringComparison.Ordinal))
@@ -317,11 +341,15 @@ public partial class DatWin : Window
                 $"{L("Database", "Source database")}: {info.SourceDatabaseName} ({info.SourceDatabaseProvider})",
                 $"{L("PackageVersion", "Format / schema version")}: {info.FormatVersion} / {info.SchemaVersion} | {L("Rows", "Rows")}: {info.RowCount} | {L("Tables", "Tables")}: {info.TableCount}",
                 $"{L("PackageId", "Package ID")}: {info.PackageId}",
-                $"{L("PackageIntegrity", "Integrity")}: {L("Verified", "Password, payload hash and signature verified")} | {fileNameCheck}",
+                $"{L("PackageIntegrity", "Integrity")}: {L("Verified", "Password, payload hash and embedded signature verified; signer identity is not independently certified")} | {fileNameCheck}",
                 $"{L("PackageFields", "Fields and types")}: {fieldLines}");
             if (matchedOption == null)
                 ImportPackageInfoBox.Text += Environment.NewLine + L("DatasetNotAvailable", "The package data type is not available in the current import list.");
-            LogOp("PackageMetadata.Read", $"scope={info.DataScope} | dataset={info.DatasetKey} | rows={info.RowCount} | package={info.PackageId} | user={GetCurrentUserName()}");
+            _verifiedPackagePath = Path.GetFullPath(path);
+            _verifiedPackageId = info.PackageId;
+            _verifiedPackagePassword = password;
+            _verifiedPackageDatasetKey = isDataset ? info.DatasetKey : "$FullPackage";
+            LogOp("PackageMetadata.Read", $"scope={info.DataScope} | dataset={info.DatasetKey} | rows={info.RowCount} | package={info.PackageId} | sourceCompany={info.SourceCompanyCode} | user={GetCurrentUserName()}");
         }
         catch (Exception ex)
         {
@@ -533,6 +561,20 @@ public partial class DatWin : Window
                     return;
                 }
 
+                if (!string.Equals(Path.GetExtension(path), ".stei", StringComparison.OrdinalIgnoreCase))
+                {
+                    MessageBox.Show(L("InvalidExtension", "Choose a .stei package or a ShouTech Excel (.xlsx) export."), Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                var fullPath = Path.GetFullPath(path);
+                if (!string.Equals(_verifiedPackagePath, fullPath, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(_verifiedPackagePassword, password, StringComparison.Ordinal) ||
+                    string.IsNullOrWhiteSpace(_verifiedPackageId))
+                {
+                    MessageBox.Show(L("VerifyPackageFirst", "Read and verify the encrypted package details before importing."), Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
                 var progress = new Progress<(long done, long total)>(p => OperationProgress.Value = p.total <= 0 ? 0 : Math.Min(100, p.done * 100d / p.total));
                 SteiResult result;
                 if (ImportDatasetBox.SelectedItem is not DataExportOption steiOption)
@@ -540,10 +582,21 @@ public partial class DatWin : Window
                     MessageBox.Show(L("SelectDataset", "Select whether this is a full package or a specific dataset package."), Title, MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
+                if (!string.Equals(_verifiedPackageDatasetKey, steiOption.Key, StringComparison.Ordinal))
+                {
+                    MessageBox.Show(L("PackageDatasetMismatch", "The selected import type does not match the verified package metadata. Read the file details again."), Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
                 if (steiOption.Key == "$FullPackage")
+                {
+                    var confirmFull = MessageBox.Show(L("FullPackageConfirm", "This is a full database package. Importing it can affect many tables. Continue only if you trust the source and have a current backup."), Title, MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                    if (confirmFull != MessageBoxResult.Yes) return;
                     result = await SteiSvc.ImportAsync(path, password, simulation: false, progress: progress, ct: CancellationToken.None);
+                }
                 else
+                {
                     result = await DataExportSvc.ImportDatasetPackageAsync(path, password, steiOption, progress: progress, ct: CancellationToken.None);
+                }
                 ShowResult(result, path, false);
             }
             else
