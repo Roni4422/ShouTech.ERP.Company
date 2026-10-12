@@ -512,10 +512,19 @@ internal static class SteiSvc
                         c.Equals("company_id", StringComparison.OrdinalIgnoreCase) ||
                         c.Equals("companyid", StringComparison.OrdinalIgnoreCase));
                     if (!columns.Contains("is_deleted", StringComparer.OrdinalIgnoreCase) ||
-                        companyColumn == null)
+                        companyColumn == null || pair.Value.Any(row => !row.ContainsKey(companyColumn)))
                     {
                         failedTables++;
-                        errors.Add($"Replace mode requires a soft-delete column and an explicit company scope in '{pair.Key}'.");
+                        errors.Add($"Replace mode requires a soft-delete column and an explicit company field in every package row for '{pair.Key}'.");
+                        continue;
+                    }
+                    var companyValues = pair.Value.Select(row =>
+                        Convert.ToString(FromJson(row[companyColumn]), CultureInfo.InvariantCulture) ?? string.Empty)
+                        .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                    if (companyValues.Length != 1 || string.IsNullOrWhiteSpace(companyValues[0]))
+                    {
+                        failedTables++;
+                        errors.Add($"Replace mode requires every package row in '{pair.Key}' to belong to one company.");
                         continue;
                     }
                 }
@@ -842,9 +851,18 @@ internal static class SteiSvc
         if (string.IsNullOrWhiteSpace(targetCompanyId) || string.IsNullOrWhiteSpace(sourceCompanyId))
             return;
         var key = row.Keys.FirstOrDefault(k => string.Equals(k, "company_id", StringComparison.OrdinalIgnoreCase));
-        if (key is null || row[key].ValueKind != JsonValueKind.String)
+        if (key is null) return;
+        var sourceValue = Convert.ToString(FromJson(row[key]), CultureInfo.InvariantCulture);
+        if (!string.Equals(sourceValue, sourceCompanyId, StringComparison.OrdinalIgnoreCase))
             return;
-        if (string.Equals(row[key].GetString(), sourceCompanyId, StringComparison.OrdinalIgnoreCase))
+
+        if (row[key].ValueKind == JsonValueKind.Number &&
+            long.TryParse(targetCompanyId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var targetLong))
+            row[key] = JsonSerializer.SerializeToElement(targetLong);
+        else if (row[key].ValueKind == JsonValueKind.Number &&
+                 decimal.TryParse(targetCompanyId, NumberStyles.Number, CultureInfo.InvariantCulture, out var targetDecimal))
+            row[key] = JsonSerializer.SerializeToElement(targetDecimal);
+        else
             row[key] = JsonSerializer.SerializeToElement(targetCompanyId);
     }
 
