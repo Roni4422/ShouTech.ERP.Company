@@ -11,6 +11,7 @@ using System.Data.Common;
 using System.Data;
 using System.IO.Compression;
 using System.IO;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -493,7 +494,7 @@ internal static class SteiSvc
                     ? await GetPrimaryKeyColumnsAsync(db, provider, pair.Key, ct)
                     : new List<string>();
                 if (isDatasetPackage && (primaryKeys.Count == 0 ||
-                    primaryKeys.Any(key => !pair.Value.All(row => row.ContainsKey(key))))
+                    primaryKeys.Any(key => !pair.Value.All(row => row.ContainsKey(key)))))
                 {
                     failedTables++;
                     errors.Add($"The target table '{pair.Key}' has no discoverable primary key, or the package omits one. Safe dataset import requires all primary-key fields.");
