@@ -3425,6 +3425,7 @@ internal static class MatRepo
 
 		EnsureSchema();
 		using var conn = Open(cs);
+		EnsureGroupCardSchema(conn);
 		using var cmd = conn.CreateCommand();
 
 		cmd.CommandText = @"
