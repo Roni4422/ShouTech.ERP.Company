@@ -1,0 +1,432 @@
+using System;
+using System.Collections.Generic;
+using System.Data.Common;
+using System.Globalization;
+using Microsoft.Data.Sqlite;
+using Npgsql;
+using ShouTech.App.Reporting.Invoices;
+using ShouTech.App.Views;
+
+namespace ShouTech.App.Services;
+
+/// <summary>
+/// Persistence for commercial invoices (sales / purchase).
+/// Posted documents are immutable; corrections use returns (accounting standard).
+/// </summary>
+public static class InvRepo
+{
+    private static string Company => AppState.CurrentCompanyCode ?? string.Empty;
+
+    public static string NextDocNo(InvDocKind kind)
+    {
+        DocSchema.Ensure();
+        var table = kind.IsSales() ? "sales_documents" : "purchase_documents";
+        var prefix = kind switch
+        {
+            InvDocKind.SalesInvoice => "SAL",
+            InvDocKind.SalesReturn => "SRT",
+            InvDocKind.PosSale => "POS",
+            InvDocKind.PurchaseInvoice => "PUR",
+            InvDocKind.PurchaseReturn => "PRT",
+            InvDocKind.StockIn => "ENT",
+            InvDocKind.StockOut => "EXT",
+            InvDocKind.StockTransfer => "TRN",
+            InvDocKind.OpeningStock => "OPN",
+            InvDocKind.InventoryCount => "CNT",
+            InvDocKind.Quotation => "QUO",
+            _ => "DOC"
+        };
+        var year = DateTime.Today.Year.ToString(CultureInfo.InvariantCulture);
+        var cs = DatabaseRuntime.GetConnectionString();
+        if (string.IsNullOrWhiteSpace(cs)) return $"{prefix}-{year}-0001";
+
+        try
+        {
+            using var connection = Open(cs);
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = $"""
+                SELECT COUNT(1) FROM {table}
+                WHERE company_id = $company AND doc_kind = $kind
+                  AND doc_no LIKE $pattern;
+                """;
+            Add(cmd, "$company", Company);
+            Add(cmd, "$kind", prefix);
+            Add(cmd, "$pattern", $"{prefix}-{year}-%");
+            var count = Convert.ToInt32(cmd.ExecuteScalar() ?? 0, CultureInfo.InvariantCulture);
+            return $"{prefix}-{year}-{(count + 1).ToString("D4", CultureInfo.InvariantCulture)}";
+        }
+        catch
+        {
+            return $"{prefix}-{year}-0001";
+        }
+    }
+
+    public static long SaveDraft(InvDoc doc)
+    {
+        ArgumentNullException.ThrowIfNull(doc);
+        if (doc.Status == InvDocStatus.Posted)
+            throw new InvalidOperationException("Posted documents cannot be overwritten. Use a return document.");
+
+        DocSchema.Ensure();
+        doc.RenumberLines();
+        doc.RecalcLineTaxesFromDefault();
+
+        var cs = DatabaseRuntime.GetConnectionString()
+            ?? throw new InvalidOperationException("No database connection.");
+        using var connection = Open(cs);
+        using var tx = connection.BeginTransaction();
+
+        var isSales = doc.IsSalesSide;
+        var headerTable = isSales ? "sales_documents" : "purchase_documents";
+        var lineTable = isSales ? "sales_document_lines" : "purchase_document_lines";
+
+        long docId = doc.DocId;
+        if (docId <= 0)
+        {
+            if (string.IsNullOrWhiteSpace(doc.DocNo))
+                doc.DocNo = NextDocNo(doc.Kind);
+
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.Transaction = tx;
+                cmd.CommandText = $"""
+                    INSERT INTO {headerTable}
+                    (company_id, doc_kind, doc_no, doc_date, party_id, party_name, warehouse_id,
+                     currency_code, exchange_rate, subtotal, discount_amount, tax_amount, grand_total,
+                     status, tax_code, tax_rate, notes, created_by, is_deleted)
+                    VALUES
+                    ($company, $kind, $no, $date, $party, $pname, $wh,
+                     $cur, $fx, $sub, 0, $tax, $grand,
+                     'Draft', $tcode, $trate, $notes, $user, 0);
+                    SELECT last_insert_rowid();
+                    """;
+                if (DatabaseRuntime.IsPostgreSql())
+                {
+                    cmd.CommandText = $"""
+                        INSERT INTO {headerTable}
+                        (company_id, doc_kind, doc_no, doc_date, party_id, party_name, warehouse_id,
+                         currency_code, exchange_rate, subtotal, discount_amount, tax_amount, grand_total,
+                         status, tax_code, tax_rate, notes, created_by, is_deleted)
+                        VALUES
+                        ($company, $kind, $no, $date, $party, $pname, $wh,
+                         $cur, $fx, $sub, 0, $tax, $grand,
+                         'Draft', $tcode, $trate, $notes, $user, 0)
+                        RETURNING doc_id;
+                        """;
+                }
+                BindHeader(cmd, doc);
+                docId = Convert.ToInt64(cmd.ExecuteScalar(), CultureInfo.InvariantCulture);
+            }
+        }
+        else
+        {
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.Transaction = tx;
+                cmd.CommandText = $"""
+                    UPDATE {headerTable} SET
+                      doc_date=$date, party_id=$party, party_name=$pname, warehouse_id=$wh,
+                      currency_code=$cur, exchange_rate=$fx, subtotal=$sub, tax_amount=$tax,
+                      grand_total=$grand, tax_code=$tcode, tax_rate=$trate, notes=$notes
+                    WHERE doc_id=$id AND company_id=$company AND status='Draft' AND is_deleted=0;
+                    """;
+                BindHeader(cmd, doc);
+                Add(cmd, "$id", docId);
+                var affected = cmd.ExecuteNonQuery();
+                if (affected == 0)
+                    throw new InvalidOperationException("Document not found or not editable.");
+            }
+
+            using (var del = connection.CreateCommand())
+            {
+                del.Transaction = tx;
+                del.CommandText = $"DELETE FROM {lineTable} WHERE doc_id=$id;";
+                Add(del, "$id", docId);
+                del.ExecuteNonQuery();
+            }
+        }
+
+        foreach (var line in doc.Lines)
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = $"""
+                INSERT INTO {lineTable}
+                (doc_id, line_no, material_id, material_code, description, unit, qty, unit_price,
+                 discount_pct, tax_rate, line_subtotal, line_tax, line_total, warehouse_id)
+                VALUES
+                ($doc, $no, $mid, $mcode, $desc, $unit, $qty, $price,
+                 $disc, $trate, $sub, $ltax, $ltot, $wh);
+                """;
+            Add(cmd, "$doc", docId);
+            Add(cmd, "$no", line.LineNo);
+            Add(cmd, "$mid", line.MaterialId);
+            Add(cmd, "$mcode", line.MaterialCode);
+            Add(cmd, "$desc", line.Description);
+            Add(cmd, "$unit", line.Unit);
+            Add(cmd, "$qty", line.Qty);
+            Add(cmd, "$price", line.UnitPrice);
+            Add(cmd, "$disc", line.DiscountPct);
+            Add(cmd, "$trate", line.TaxRate);
+            Add(cmd, "$sub", line.LineSubtotal);
+            Add(cmd, "$ltax", line.LineTax);
+            Add(cmd, "$ltot", line.LineTotal);
+            Add(cmd, "$wh", line.WarehouseId ?? doc.WarehouseId);
+            cmd.ExecuteNonQuery();
+        }
+
+        tx.Commit();
+        doc.DocId = docId;
+        doc.Status = InvDocStatus.Draft;
+        return docId;
+    }
+
+    public static void Post(long docId, InvDocKind kind, string userId)
+    {
+        DocSchema.Ensure();
+        MatRepo.EnsureSchema();
+        var isSales = kind.IsSales();
+        var headerTable = isSales ? "sales_documents" : "purchase_documents";
+        var cs = DatabaseRuntime.GetConnectionString()
+            ?? throw new InvalidOperationException("No database connection.");
+        using var connection = Open(cs);
+        using var tx = connection.BeginTransaction();
+
+        InvDoc? doc;
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = $"""
+                SELECT doc_id, doc_kind, doc_no, doc_date, party_id, party_name, warehouse_id,
+                       currency_code, exchange_rate, subtotal, tax_amount, grand_total, status, tax_rate
+                FROM {headerTable}
+                WHERE doc_id=$id AND company_id=$company AND is_deleted=0;
+                """;
+            Add(cmd, "$id", docId);
+            Add(cmd, "$company", Company);
+            using var reader = cmd.ExecuteReader();
+            if (!reader.Read())
+                throw new InvalidOperationException("Document not found.");
+            if (string.Equals(reader.GetString(reader.GetOrdinal("status")), "Posted", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Document is already posted.");
+            doc = new InvDoc
+            {
+                DocId = docId,
+                Kind = kind,
+                DocNo = reader.GetString(reader.GetOrdinal("doc_no")),
+                DocDate = DateTime.Parse(reader.GetString(reader.GetOrdinal("doc_date")), CultureInfo.InvariantCulture),
+                PartyId = reader.IsDBNull(reader.GetOrdinal("party_id")) ? null : Convert.ToInt64(reader.GetValue(reader.GetOrdinal("party_id")), CultureInfo.InvariantCulture),
+                PartyName = reader.IsDBNull(reader.GetOrdinal("party_name")) ? "" : reader.GetString(reader.GetOrdinal("party_name")),
+                WarehouseId = reader.IsDBNull(reader.GetOrdinal("warehouse_id")) ? null : Convert.ToInt32(reader.GetValue(reader.GetOrdinal("warehouse_id")), CultureInfo.InvariantCulture),
+                CurrencyCode = reader.GetString(reader.GetOrdinal("currency_code")),
+            };
+        }
+
+        // Load lines for inventory posting within this connection/transaction.
+        {
+            var lineTable = isSales ? "sales_document_lines" : "purchase_document_lines";
+            using var lineCmd = connection.CreateCommand();
+            lineCmd.Transaction = tx;
+            lineCmd.CommandText = $"""
+                SELECT line_no, material_id, material_code, description, unit, qty, unit_price,
+                       discount_pct, tax_rate, warehouse_id
+                FROM {lineTable} WHERE doc_id=$id ORDER BY line_no;
+                """;
+            Add(lineCmd, "$id", docId);
+            using var lr = lineCmd.ExecuteReader();
+            while (lr.Read())
+            {
+                doc.Lines.Add(new InvLine
+                {
+                    LineNo = Convert.ToInt32(lr.GetValue(0), CultureInfo.InvariantCulture),
+                    MaterialId = lr.IsDBNull(1) ? null : Convert.ToInt64(lr.GetValue(1), CultureInfo.InvariantCulture),
+                    MaterialCode = lr.IsDBNull(2) ? "" : Convert.ToString(lr.GetValue(2), CultureInfo.InvariantCulture) ?? "",
+                    Description = Convert.ToString(lr.GetValue(3), CultureInfo.InvariantCulture) ?? "",
+                    Unit = lr.IsDBNull(4) ? "" : Convert.ToString(lr.GetValue(4), CultureInfo.InvariantCulture) ?? "",
+                    Qty = Convert.ToDecimal(lr.GetValue(5), CultureInfo.InvariantCulture),
+                    UnitPrice = Convert.ToDecimal(lr.GetValue(6), CultureInfo.InvariantCulture),
+                    DiscountPct = Convert.ToDecimal(lr.GetValue(7), CultureInfo.InvariantCulture),
+                    TaxRate = Convert.ToDecimal(lr.GetValue(8), CultureInfo.InvariantCulture),
+                    WarehouseId = lr.IsDBNull(9) ? null : Convert.ToInt32(lr.GetValue(9), CultureInfo.InvariantCulture),
+                });
+            }
+        }
+
+        using (var upd = connection.CreateCommand())
+        {
+            upd.Transaction = tx;
+            upd.CommandText = $"""
+                UPDATE {headerTable}
+                SET status='Posted', posted_by=$user, posted_at=datetime('now')
+                WHERE doc_id=$id AND company_id=$company AND status='Draft';
+                """;
+            if (DatabaseRuntime.IsPostgreSql())
+                upd.CommandText = $"""
+                    UPDATE {headerTable}
+                    SET status='Posted', posted_by=$user, posted_at=NOW()
+                    WHERE doc_id=$id AND company_id=$company AND status='Draft';
+                    """;
+            Add(upd, "$user", userId);
+            Add(upd, "$id", docId);
+            Add(upd, "$company", Company);
+            if (upd.ExecuteNonQuery() == 0)
+                throw new InvalidOperationException("Post failed — document may already be posted.");
+        }
+
+        // Party ledger: sales increase receivable (debit customer), purchases increase payable.
+        if (doc.PartyId is long partyId)
+        {
+            using var led = connection.CreateCommand();
+            led.Transaction = tx;
+            led.CommandText = """
+                INSERT INTO party_ledger
+                (company_id, party_kind, party_id, doc_kind, doc_id, doc_no, entry_date, debit, credit, currency_code, note)
+                VALUES
+                ($company, $pk, $pid, $dk, $did, $dno, $date, $debit, $credit, $cur, $note);
+                """;
+            var partyKind = isSales ? "C" : "S";
+            decimal debit = 0, credit = 0;
+            if (isSales)
+            {
+                if (kind == InvDocKind.SalesReturn) credit = doc.GrandTotal;
+                else debit = doc.GrandTotal;
+            }
+            else
+            {
+                if (kind == InvDocKind.PurchaseReturn) debit = doc.GrandTotal;
+                else credit = doc.GrandTotal;
+            }
+            Add(led, "$company", Company);
+            Add(led, "$pk", partyKind);
+            Add(led, "$pid", partyId);
+            Add(led, "$dk", doc.KindCode);
+            Add(led, "$did", docId);
+            Add(led, "$dno", doc.DocNo);
+            Add(led, "$date", doc.DocDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            Add(led, "$debit", debit);
+            Add(led, "$credit", credit);
+            Add(led, "$cur", doc.CurrencyCode);
+            Add(led, "$note", "Auto post");
+            led.ExecuteNonQuery();
+        }
+
+        // Inventory effects (same transaction as ledger + status).
+        StkPost.ApplyDocument(connection, tx, doc);
+
+        tx.Commit();
+    }
+
+    public static InvDoc? Load(long docId, InvDocKind kind)
+    {
+        DocSchema.Ensure();
+        var isSales = kind.IsSales();
+        var headerTable = isSales ? "sales_documents" : "purchase_documents";
+        var lineTable = isSales ? "sales_document_lines" : "purchase_document_lines";
+        var cs = DatabaseRuntime.GetConnectionString();
+        if (string.IsNullOrWhiteSpace(cs)) return null;
+
+        using var connection = Open(cs);
+        InvDoc doc;
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = $"""
+                SELECT doc_id, doc_kind, doc_no, doc_date, party_id, party_name, warehouse_id,
+                       currency_code, exchange_rate, status, tax_code, tax_rate, notes
+                FROM {headerTable}
+                WHERE doc_id=$id AND company_id=$company AND is_deleted=0;
+                """;
+            Add(cmd, "$id", docId);
+            Add(cmd, "$company", Company);
+            using var reader = cmd.ExecuteReader();
+            if (!reader.Read()) return null;
+            doc = new InvDoc
+            {
+                DocId = docId,
+                Kind = kind,
+                DocNo = reader.GetString(reader.GetOrdinal("doc_no")),
+                DocDate = DateTime.Parse(reader.GetString(reader.GetOrdinal("doc_date")), CultureInfo.InvariantCulture),
+                PartyId = reader.IsDBNull(reader.GetOrdinal("party_id")) ? null : Convert.ToInt64(reader.GetValue(reader.GetOrdinal("party_id")), CultureInfo.InvariantCulture),
+                PartyName = reader.IsDBNull(reader.GetOrdinal("party_name")) ? "" : reader.GetString(reader.GetOrdinal("party_name")),
+                WarehouseId = reader.IsDBNull(reader.GetOrdinal("warehouse_id")) ? null : Convert.ToInt32(reader.GetValue(reader.GetOrdinal("warehouse_id")), CultureInfo.InvariantCulture),
+                CurrencyCode = reader.GetString(reader.GetOrdinal("currency_code")),
+                ExchangeRate = Convert.ToDecimal(reader.GetValue(reader.GetOrdinal("exchange_rate")), CultureInfo.InvariantCulture),
+                Status = string.Equals(reader.GetString(reader.GetOrdinal("status")), "Posted", StringComparison.OrdinalIgnoreCase)
+                    ? InvDocStatus.Posted : InvDocStatus.Draft,
+                TaxCode = reader.IsDBNull(reader.GetOrdinal("tax_code")) ? null : reader.GetString(reader.GetOrdinal("tax_code")),
+                DefaultTaxRate = Convert.ToDecimal(reader.GetValue(reader.GetOrdinal("tax_rate")), CultureInfo.InvariantCulture),
+                Notes = reader.IsDBNull(reader.GetOrdinal("notes")) ? null : reader.GetString(reader.GetOrdinal("notes")),
+            };
+        }
+
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = $"""
+                SELECT line_no, material_id, material_code, description, unit, qty, unit_price,
+                       discount_pct, tax_rate, warehouse_id
+                FROM {lineTable} WHERE doc_id=$id ORDER BY line_no;
+                """;
+            Add(cmd, "$id", docId);
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                doc.Lines.Add(new InvLine
+                {
+                    LineNo = Convert.ToInt32(reader.GetValue(0), CultureInfo.InvariantCulture),
+                    MaterialId = reader.IsDBNull(1) ? null : Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture),
+                    MaterialCode = reader.IsDBNull(2) ? "" : Convert.ToString(reader.GetValue(2), CultureInfo.InvariantCulture) ?? "",
+                    Description = Convert.ToString(reader.GetValue(3), CultureInfo.InvariantCulture) ?? "",
+                    Unit = reader.IsDBNull(4) ? "" : Convert.ToString(reader.GetValue(4), CultureInfo.InvariantCulture) ?? "",
+                    Qty = Convert.ToDecimal(reader.GetValue(5), CultureInfo.InvariantCulture),
+                    UnitPrice = Convert.ToDecimal(reader.GetValue(6), CultureInfo.InvariantCulture),
+                    DiscountPct = Convert.ToDecimal(reader.GetValue(7), CultureInfo.InvariantCulture),
+                    TaxRate = Convert.ToDecimal(reader.GetValue(8), CultureInfo.InvariantCulture),
+                    WarehouseId = reader.IsDBNull(9) ? null : Convert.ToInt32(reader.GetValue(9), CultureInfo.InvariantCulture),
+                });
+            }
+        }
+        return doc;
+    }
+
+    private static void BindHeader(DbCommand cmd, InvDoc doc)
+    {
+        Add(cmd, "$company", Company);
+        Add(cmd, "$kind", doc.KindCode);
+        Add(cmd, "$no", doc.DocNo);
+        Add(cmd, "$date", doc.DocDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+        Add(cmd, "$party", doc.PartyId);
+        Add(cmd, "$pname", doc.PartyName);
+        Add(cmd, "$wh", doc.WarehouseId);
+        Add(cmd, "$cur", doc.CurrencyCode);
+        Add(cmd, "$fx", doc.ExchangeRate);
+        Add(cmd, "$sub", doc.Subtotal);
+        Add(cmd, "$tax", doc.TaxAmount);
+        Add(cmd, "$grand", doc.GrandTotal);
+        Add(cmd, "$tcode", doc.TaxCode);
+        Add(cmd, "$trate", doc.DefaultTaxRate);
+        Add(cmd, "$notes", doc.Notes);
+        Add(cmd, "$user", AppState.CurrentUser?.Username ?? Environment.UserName);
+    }
+
+    private static DbConnection Open(string connectionString)
+    {
+        DbConnection connection = DatabaseRuntime.IsPostgreSql()
+            ? new NpgsqlConnection(connectionString)
+            : new SqliteConnection(DatabaseRuntime.NormalizeSqliteConnectionString(connectionString));
+        connection.Open();
+        return connection;
+    }
+
+    private static void Add(DbCommand command, string name, object? value)
+    {
+        var p = command.CreateParameter();
+        p.ParameterName = name;
+        p.Value = value ?? DBNull.Value;
+        command.Parameters.Add(p);
+    }
+}
+
+internal static class InvDocKindExt
+{
+    public static bool IsSales(this InvDocKind kind)
+        => kind is InvDocKind.SalesInvoice or InvDocKind.SalesReturn or InvDocKind.PosSale or InvDocKind.Quotation;
+}

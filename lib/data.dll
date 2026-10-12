@@ -1,0 +1,4 @@
+// Path: lib\data.dll
+// Language: C# + Dapper
+// Description: Data Layer: إدارة الاتصال بـ SQL، Transaction Scope، Concurrency Control.
+======================================================================
