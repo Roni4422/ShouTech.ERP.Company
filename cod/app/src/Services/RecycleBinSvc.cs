@@ -238,16 +238,18 @@ public static class RecycleBinSvc
             var primaryKeyColumn = ResolveExistingColumn(columns, item.PrimaryKeyColumn);
 
             await using var command = connection.CreateCommand();
-            var assignments = new List<string> { $"{Quote(softDeleteColumn)} = 0" };
+            var falseLiteral = DatabaseRuntime.IsPostgreSql() ? "FALSE" : "0";
+            var trueLiteral = DatabaseRuntime.IsPostgreSql() ? "TRUE" : "1";
+            var assignments = new List<string> { $"{Quote(softDeleteColumn)} = {falseLiteral}" };
             if (deletedAtColumn is not null)
                 assignments.Add($"{Quote(deletedAtColumn)} = NULL");
             if (isActiveColumn is not null)
-                assignments.Add($"{Quote(isActiveColumn)} = 1");
+                assignments.Add($"{Quote(isActiveColumn)} = {trueLiteral}");
 
             var predicates = new List<string>
             {
                 $"{Quote(primaryKeyColumn)} = @primaryKey",
-                $"{Quote(softDeleteColumn)} = 1"
+                $"{Quote(softDeleteColumn)} = {(DatabaseRuntime.IsPostgreSql() ? "TRUE" : "1")}"
             };
             if (companyColumn is not null)
             {
@@ -338,7 +340,7 @@ public static class RecycleBinSvc
             var predicates = new List<string>
             {
                 $"{Quote(primaryKeyColumn)} = @primaryKey",
-                $"{Quote(softDeleteColumn)} = 1",
+                $"{Quote(softDeleteColumn)} = {(DatabaseRuntime.IsPostgreSql() ? "TRUE" : "1")}",
                 $"{Quote(companyColumn)} = @companyValue"
             };
             AddParameter(command, "@companyValue", companyValue);
@@ -412,7 +414,10 @@ public static class RecycleBinSvc
         if (deletedByColumn is not null)
             selectList.Add(Quote(deletedByColumn));
 
-        var predicates = new List<string> { $"{Quote(softDeleteColumn)} = 1" };
+        var predicates = new List<string>
+        {
+            $"{Quote(softDeleteColumn)} = {(DatabaseRuntime.IsPostgreSql() ? "TRUE" : "1")}"
+        };
         predicates.Add($"{Quote(companyColumn)} = @companyId");
         AddParameter(command, "@companyId", companyValue);
         if (definition.DraftOnly)
