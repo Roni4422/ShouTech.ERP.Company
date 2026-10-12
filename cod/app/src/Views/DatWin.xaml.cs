@@ -135,7 +135,17 @@ public partial class DatWin : Window
             or "Purchases" or "PurchaseLines" or "PurchaseReturns" or "PurchaseReturnLines"
             or "ReceiptVouchers" or "PaymentVouchers" or "StockMovements"
             or "StockAdjustments" or "StockAdjustmentLines" or "OpeningStock"
-            or "CostLayers" or "ValuationHistory" or "ProductionOrders" or "ProductionOrderLines";
+            or "CostLayers" or "ValuationHistory" or "ProductionOrders" or "ProductionOrderLines"
+            or "PosSessions" or "StockReservations" or "Batches" or "SerialNumbers" or "ProductValuation";
+
+    private static bool IsReplaceSupportedSteiDataset(string key)
+        => key is "Products" or "Customers" or "Suppliers" or "ProductClasses"
+            or "ProductAttributes" or "ProductClassAttributes" or "ProductSuppliers"
+            or "ProductBarcodes" or "ProductUnits" or "Brands" or "CustomerGroups"
+            or "CustomerContacts" or "CustomerAddresses" or "SupplierGroups"
+            or "SupplierContacts" or "SalesRepresentatives" or "Employees"
+            or "Departments" or "JobTitles" or "Warehouses" or "WarehouseLocations"
+            or "WarehouseZones" or "WarehouseTypes" or "Units";
 
     private void ApplyMode()
     {
@@ -613,9 +623,9 @@ public partial class DatWin : Window
                         Title, MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
-                if (replaceMode && IsProtectedSteiDataset(steiOption.Key))
+                if (replaceMode && !IsReplaceSupportedSteiDataset(steiOption.Key))
                 {
-                    MessageBox.Show(L("AccountingReplaceBlocked", "Replace mode is prohibited for posted accounting documents, vouchers, stock movements, and valuation history. Their original records and audit trail must be preserved."),
+                    MessageBox.Show(L("DatasetReplaceBlocked", "Replace mode is limited to approved master-data datasets that support company-scoped soft deletion. Use update/insert mode for this dataset; accounting and inventory history must be preserved."),
                         Title, MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
