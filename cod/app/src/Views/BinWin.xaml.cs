@@ -79,7 +79,7 @@ public partial class BinWin : Window
                 ? L("The recycle bin is empty for this company.", "سلة المحذوفات فارغة لهذه الشركة.")
                 : string.Format(
                     CultureInfo.CurrentCulture,
-                    "{0:N0} item(s) in the recycle bin for company {1}.",
+                    L("{0:N0} item(s) in the recycle bin for company {1}.", "عدد العناصر في سلة المحذوفات: {0:N0}، الشركة: {1}."),
                     items.Count,
                     companyCode);
         }
@@ -126,7 +126,7 @@ public partial class BinWin : Window
                 var firstError = results.FirstOrDefault(result => !result.Succeeded)?.ErrorMessage;
                 MessageBox.Show(this,
                     string.Format(CultureInfo.CurrentCulture,
-                        "Restored {0:N0} item(s). {1:N0} failed.{2}{3}",
+                        L("Restored {0:N0} item(s). {1:N0} failed.{2}{3}", "تمت استعادة {0:N0} عنصر، وفشلت استعادة {1:N0}.{2}{3}"),
                         restored, failed, Environment.NewLine, firstError ?? string.Empty),
                     Title, MessageBoxButton.OK, MessageBoxImage.Warning);
             }
@@ -153,7 +153,7 @@ public partial class BinWin : Window
         }
 
         var confirm = MessageBox.Show(this,
-            "Selected items will be permanently deleted and cannot be restored.\n\nContinue?",
+            L("Selected items will be permanently deleted and cannot be restored.\n\nContinue?", "سيتم حذف العناصر المحددة نهائياً ولن يمكن استعادتها.\n\nهل تريد المتابعة؟"),
             Title, MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
         if (confirm != MessageBoxResult.Yes)
             return;
@@ -186,7 +186,7 @@ public partial class BinWin : Window
             {
                 MessageBox.Show(this,
                     string.Format(CultureInfo.CurrentCulture,
-                        "Permanently deleted {0:N0} item(s). {1:N0} failed.{2}{3}",
+                        L("Permanently deleted {0:N0} item(s). {1:N0} failed.{2}{3}", "تم حذف {0:N0} عنصر نهائياً، وفشل حذف {1:N0}.{2}{3}"),
                         purged, failed, Environment.NewLine, firstError ?? string.Empty),
                     Title, MessageBoxButton.OK, MessageBoxImage.Warning);
             }
