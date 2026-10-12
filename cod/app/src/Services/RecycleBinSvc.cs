@@ -51,12 +51,6 @@ public static class RecycleBinSvc
     /// <summary>Master-data tables only. Transactional tables are intentionally excluded.</summary>
     private static readonly BinTableDefinition[] Catalog =
     [
-        new("sales_documents", "SalesInvoices",
-            ["doc_no", "party_name", "doc_id"],
-            ["doc_id"]),
-        new("purchase_documents", "PurchaseInvoices",
-            ["doc_no", "party_name", "doc_id"],
-            ["doc_id"]),
         new("products", "Products",
             ["product_name_ar", "product_name_en", "product_name", "name", "code", "barcode"],
             ["product_id", "id"]),
