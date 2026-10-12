@@ -670,7 +670,7 @@ public partial class DatWin : Window
                         $"key={steiOption.Key} | mode={modeName} | user={actor} | company={company} | at={startedAt:yyyy-MM-dd HH:mm:ss} | file={path}");
                     result = await DataExportSvc.ImportDatasetPackageAsync(path, password, steiOption, simulation: false, progress: progress, ct: CancellationToken.None, replaceMode: replaceMode);
                     LogOp("ImportSTEI.Dataset",
-                        $"key={steiOption.Key} | mode={modeName} | success={result.Success} | rows={result.Rows} | failedRows={result.FailedRows} | failedTables={result.FailedTables} | user={actor} | company={company} | at={DateTime.Now:yyyy-MM-dd HH:mm:ss} | file={path}");
+                        $"key={steiOption.Key} | mode={modeName} | success={result.Success} | rows={result.Rows} | failedRows={result.FailedRows} | failedTables={result.FailedTables} | deletedRows={result.DeletedRows} | user={actor} | company={company} | at={DateTime.Now:yyyy-MM-dd HH:mm:ss} | file={path}");
                 }
                 ShowResult(result, path, false);
             }
@@ -750,6 +750,9 @@ public partial class DatWin : Window
             $"{L("Provider", "Provider")}: {GetCurrentProvider()}",
             $"{(export ? L("OutputFile", "Output file") : L("InputFile", "Input file"))}: {path}"
         };
+        if (result.DeletedRows > 0)
+            lines.Add($"{L("DeletedRows", "Moved to recycle bin (soft-deleted)")}: {result.DeletedRows.ToString("N0", CultureInfo.InvariantCulture)}");
+
         if (result.Errors.Count > 0)
         {
             lines.Add(string.Empty);
