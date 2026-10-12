@@ -577,13 +577,18 @@ public static class RecycleBinSvc
                 if (FindColumn(columns, "is_deleted") is { } softDeleteColumn)
                 {
                     var triggerName = "trg_audit_sd_" + safeSuffix;
+                    var booleanFlag = await IsBooleanColumnAsync(connection, table, softDeleteColumn, cancellationToken)
+                        .ConfigureAwait(false);
+                    var deletedCondition = booleanFlag
+                        ? $"NEW.{Quote(softDeleteColumn)} IS TRUE"
+                        : $"COALESCE(NEW.{Quote(softDeleteColumn)}, 0) <> 0";
                     var sql = $"""
                         DROP TRIGGER IF EXISTS {Quote(triggerName)} ON public.{Quote(table)};
                         CREATE TRIGGER {Quote(triggerName)}
                         AFTER UPDATE OF {Quote(softDeleteColumn)} ON public.{Quote(table)}
                         FOR EACH ROW
                         WHEN (OLD.{Quote(softDeleteColumn)} IS DISTINCT FROM NEW.{Quote(softDeleteColumn)}
-                              AND NEW.{Quote(softDeleteColumn)} IS TRUE)
+                              AND {deletedCondition})
                         EXECUTE FUNCTION public.shoutech_audit_delete_row('{primaryKey}', '{companyColumn}');
                         """;
                     await ExecuteSqliteAuditDdlAsync(connection, sql, cancellationToken).ConfigureAwait(false);
