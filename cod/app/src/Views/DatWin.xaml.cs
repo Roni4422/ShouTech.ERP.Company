@@ -552,7 +552,7 @@ public partial class DatWin : Window
                         path,
                         importOption,
                         AppState.CurrentCompanyCode ?? string.Empty,
-                        excelReplaceMode: excelReplaceMode,
+                        replaceMode: excelReplaceMode,
                         ct: CancellationToken.None);
 
                     var finishedAt = DateTime.Now;
