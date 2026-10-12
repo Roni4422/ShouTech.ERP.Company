@@ -810,15 +810,8 @@ internal static class SteiSvc
 
         var rows = await ExecuteSelectRowsAsync(db, qtable, where, guidValue, codeValue, progress, done, ct);
 
-        // If a company filter matched nothing but the table has data, export all rows
-        // (avoids empty packages when company_id format differs from shell state).
-        if (rows.Count == 0 && hasCompanyId && where.Length > 0)
-        {
-            var totalInTable = await CountRowsAsync(db, qtable, ct);
-            if (totalInTable > 0)
-                rows = await ExecuteSelectRowsAsync(db, qtable, where: "", guidValue: null, codeValue: null, progress, done, ct);
-        }
-
+        // Fail closed when the active company does not match any rows. Falling
+        // back to an unfiltered SELECT here could disclose other companies' data.
         return rows;
     }
 
