@@ -889,7 +889,11 @@ internal static class SteiSvc
             return;
 
         var sourceValue = Convert.ToString(FromJson(row[key]), CultureInfo.InvariantCulture);
-        if (!string.Equals(sourceValue, sourceScope, StringComparison.OrdinalIgnoreCase))
+        var matchesSource = legacyCodeScoped
+            ? string.Equals(sourceValue, sourceScope, StringComparison.OrdinalIgnoreCase) ||
+              string.Equals(sourceValue, sourceCompanyId, StringComparison.OrdinalIgnoreCase)
+            : string.Equals(sourceValue, sourceScope, StringComparison.OrdinalIgnoreCase);
+        if (!matchesSource)
             return;
 
         if (row[key].ValueKind == JsonValueKind.Number &&
