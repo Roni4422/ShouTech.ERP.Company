@@ -344,6 +344,18 @@ public static class DataExportSvc
         };
     }
 
+    internal static object? NormalizeImportedValue(string tableName, string fieldName, object? value)
+    {
+        // The legacy materials schema requires name_ar to be non-NULL.
+        // A blank optional Excel "name" is stored as an empty string.
+        if (tableName.Equals("materials", StringComparison.OrdinalIgnoreCase) &&
+            fieldName.Equals("name_ar", StringComparison.OrdinalIgnoreCase) &&
+            value is null)
+            return string.Empty;
+
+        return value;
+    }
+
     internal static string GetExportHeaderLabel(string tableName, string fieldName, string translatedLabel)
     {
         // Keep the database field name (name_ar) in the encrypted dataset identity,
@@ -688,14 +700,8 @@ public static class DataExportSvc
                     var cellIndex = columnIndexes[mapping.Key];
                     var cell = cellIndex < sourceRow.Count ? sourceRow[cellIndex] : null;
                     var parsedValue = ParseExcelValue(cell, mapping.Value.type);
-                    // The legacy materials schema requires name_ar to be non-NULL.
-                    // A blank optional Excel "name" is stored as an empty string,
-                    // so users are not forced to provide a name during import.
-                    if (option.TableName.Equals("materials", StringComparison.OrdinalIgnoreCase) &&
-                        mapping.Value.field.Equals("name_ar", StringComparison.OrdinalIgnoreCase) &&
-                        parsedValue is null)
-                        parsedValue = string.Empty;
-                    values[mapping.Value.field] = parsedValue;
+                    values[mapping.Value.field] = NormalizeImportedValue(
+                        option.TableName, mapping.Value.field, parsedValue);
                 }
 
                 if (companyColumn != null)
