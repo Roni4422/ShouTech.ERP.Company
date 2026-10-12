@@ -346,6 +346,8 @@ namespace ShouTech.App
             try
             {
                 SchemaBootstrapper.EnsureSchema();
+                // Install database-level audit triggers before any business screen can mutate data.
+                RecycleBinSvc.InitializeAuditInfrastructureAsync().GetAwaiter().GetResult();
             }
             catch (Exception ex)
             {
