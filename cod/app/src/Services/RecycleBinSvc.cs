@@ -210,7 +210,7 @@ public static class RecycleBinSvc
             command.Transaction = transaction;
             var falseLiteral = softDeleteIsBoolean ? "FALSE" : "0";
             var trueLiteral = softDeleteIsBoolean ? "TRUE" : "1";
-            var assignments = new List<string> { $"{Quote(softDeleteColumn)} = {falseLiteral}" };
+            var assignments = new List<string> { $"{Quote(softDeleteColumn!)} = {falseLiteral}" };
             if (deletedAtColumn is not null)
                 assignments.Add($"{Quote(deletedAtColumn)} = NULL");
             if (deletedByColumn is not null)
