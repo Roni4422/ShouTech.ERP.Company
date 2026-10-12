@@ -387,8 +387,9 @@ internal static class SteiSvc
         string tableName,
         bool simulation = false,
         IProgress<(long done, long total)>? progress = null,
-        CancellationToken ct = default)
-        => ImportCoreAsync(inputPath, password, simulation, datasetKey, tableName, progress, ct);
+        CancellationToken ct = default,
+        bool replaceMode = false)
+        => ImportCoreAsync(inputPath, password, simulation, datasetKey, tableName, progress, ct, replaceMode);
 
     public static Task<SteiResult> ImportAsync(
         string inputPath,
@@ -405,7 +406,8 @@ internal static class SteiSvc
         string? expectedDatasetKey,
         string? expectedTableName,
         IProgress<(long done, long total)>? progress = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool replaceDatasetMode = false)
     {
         if (string.IsNullOrWhiteSpace(password))
             throw new ArgumentException("A package password is required.", nameof(password));
@@ -447,6 +449,9 @@ internal static class SteiSvc
         }
         else
         {
+            if (replaceDatasetMode && IsProtectedAccountingDataset(expectedDatasetKey))
+                throw new InvalidOperationException("Replace mode is prohibited for posted accounting documents, vouchers, stock movements, and valuation history.");
+
             var expectedFields = manifest.DatasetFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
             var packagedFields = tables[expectedTableName].FirstOrDefault()?.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase)
                 ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -501,6 +506,20 @@ internal static class SteiSvc
                     continue;
                 }
 
+                if (replaceDatasetMode)
+                {
+                    var companyColumn = columns.FirstOrDefault(c =>
+                        c.Equals("company_id", StringComparison.OrdinalIgnoreCase) ||
+                        c.Equals("companyid", StringComparison.OrdinalIgnoreCase));
+                    if (!columns.Contains("is_deleted", StringComparer.OrdinalIgnoreCase) ||
+                        companyColumn == null)
+                    {
+                        failedTables++;
+                        errors.Add($"Replace mode requires a soft-delete column and an explicit company scope in '{pair.Key}'.");
+                        continue;
+                    }
+                }
+
                 var seenKeys = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var row in pair.Value)
                 {
@@ -534,6 +553,7 @@ internal static class SteiSvc
         await using var tx = await db.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         try
         {
+            var importedKeysByTable = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             foreach (var pair in tables)
             {
                 ct.ThrowIfCancellationRequested();
@@ -564,6 +584,9 @@ internal static class SteiSvc
                             var primaryKeys = await GetPrimaryKeyColumnsAsync(db, provider, pair.Key, ct);
                             if (primaryKeys.Count == 0 || primaryKeys.Any(key => !row.ContainsKey(key)))
                                 throw new InvalidDataException("Safe dataset import requires all primary-key fields.");
+                            if (!importedKeysByTable.TryGetValue(pair.Key, out var importedKeys))
+                                importedKeysByTable[pair.Key] = importedKeys = new HashSet<string>(StringComparer.Ordinal);
+                            importedKeys.Add(BuildSteiCompositeKey(row, primaryKeys));
                             if (IsProtectedAccountingDataset(expectedDatasetKey))
                                 await InsertDatasetRowOnlyAsync(db, tx, provider, pair.Key, row, columns, ct);
                             else
@@ -581,6 +604,27 @@ internal static class SteiSvc
                     }
                     done++;
                     progress?.Report((done, total));
+                }
+            }
+
+            if (failedRows == 0 && failedTables == 0 && replaceDatasetMode && expectedDatasetKey != null)
+            {
+                foreach (var pair in tables)
+                {
+                    var columns = await GetColumnsAsync(db, provider, pair.Key, ct);
+                    var companyColumn = columns.FirstOrDefault(c =>
+                        c.Equals("company_id", StringComparison.OrdinalIgnoreCase) ||
+                        c.Equals("companyid", StringComparison.OrdinalIgnoreCase));
+                    var primaryKeys = await GetPrimaryKeyColumnsAsync(db, provider, pair.Key, ct);
+                    if (companyColumn == null || !columns.Contains("is_deleted", StringComparer.OrdinalIgnoreCase) || primaryKeys.Count == 0)
+                        throw new InvalidOperationException($"Replace mode is not safe for '{pair.Key}': company scope, soft-delete support, and primary keys are required.");
+                    var activeCompany = AppState.CurrentUser?.CompanyId ?? AppState.CurrentCompanyCode;
+                    if (string.IsNullOrWhiteSpace(activeCompany))
+                        throw new InvalidOperationException("The active company could not be resolved for replace mode.");
+                    var keep = importedKeysByTable.TryGetValue(pair.Key, out var imported)
+                        ? imported : new HashSet<string>(StringComparer.Ordinal);
+                    await SoftDeleteMissingDatasetRowsAsync(db, tx, provider, pair.Key, columns,
+                        companyColumn, activeCompany, primaryKeys, keep, ct);
                 }
             }
 
@@ -796,6 +840,47 @@ internal static class SteiSvc
             return;
         if (string.Equals(row[key].GetString(), sourceCompanyId, StringComparison.OrdinalIgnoreCase))
             row[key] = JsonSerializer.SerializeToElement(targetCompanyId);
+    }
+
+    private static async Task SoftDeleteMissingDatasetRowsAsync(
+        DbConnection db, DbTransaction tx, string provider, string table, List<string> columns,
+        string companyColumn, string activeCompany, IReadOnlyList<string> primaryKeys,
+        HashSet<string> importedKeys, CancellationToken ct)
+    {
+        var deletedColumn = columns.First(c => c.Equals("is_deleted", StringComparison.OrdinalIgnoreCase));
+        var deletedAtColumn = columns.FirstOrDefault(c => c.Equals("deleted_at", StringComparison.OrdinalIgnoreCase));
+        await using var select = db.CreateCommand();
+        select.Transaction = tx;
+        select.CommandText = $"SELECT {string.Join(",", primaryKeys.Select(Quote))} FROM {Quote(table)} " +
+            $"WHERE {Quote(companyColumn)}=@company AND ({Quote(deletedColumn)}=FALSE OR {Quote(deletedColumn)} IS NULL);";
+        AddParameter(select, "@company", activeCompany);
+        var missing = new List<object?[]>();
+        await using (var reader = await select.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                var values = new object?[primaryKeys.Count];
+                for (var i = 0; i < primaryKeys.Count; i++)
+                    values[i] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                var key = string.Join("\u001f", values.Select(v => Convert.ToString(v, CultureInfo.InvariantCulture) ?? string.Empty));
+                if (!importedKeys.Contains(key)) missing.Add(values);
+            }
+        }
+
+        foreach (var values in missing)
+        {
+            await using var update = db.CreateCommand();
+            update.Transaction = tx;
+            var set = Quote(deletedColumn) + "=TRUE";
+            if (deletedAtColumn != null) set += "," + Quote(deletedAtColumn) + "=@deletedAt";
+            var predicates = primaryKeys.Select((key, i) => Quote(key) + "=@k" + i).ToList();
+            predicates.Add(Quote(companyColumn) + "=@company");
+            update.CommandText = $"UPDATE {Quote(table)} SET {set} WHERE {string.Join(" AND ", predicates)};";
+            AddParameter(update, "@company", activeCompany);
+            if (deletedAtColumn != null) AddParameter(update, "@deletedAt", DateTimeOffset.UtcNow);
+            for (var i = 0; i < primaryKeys.Count; i++) AddParameter(update, "@k" + i, values[i] ?? DBNull.Value);
+            await update.ExecuteNonQueryAsync(ct);
+        }
     }
 
     private static async Task<List<string>> GetPrimaryKeyColumnsAsync(
