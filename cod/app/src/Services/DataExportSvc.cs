@@ -635,6 +635,12 @@ public static class DataExportSvc
         if (keyColumns.Count == 0)
             return 0;
 
+        // Replace cleanup must never run without an explicit company scope.
+        // This also blocks accidental cross-company cleanup for shared/global tables.
+        if (string.IsNullOrWhiteSpace(companyColumn) || companyId is null)
+            throw new InvalidOperationException(
+                $"Replace mode cannot safely remove missing rows from '{table}' without a verified company scope. Use upsert mode instead.");
+
         var columns = await GetColumnNamesAsync(connection, table, ct);
         var softCol = columns.FirstOrDefault(c => c.Equals("is_deleted", StringComparison.OrdinalIgnoreCase));
         if (softCol is null)
@@ -647,16 +653,15 @@ public static class DataExportSvc
         await using var select = connection.CreateCommand();
         select.Transaction = transaction;
         var keySelect = string.Join(", ", keyColumns.Select(QuoteIdentifier));
-        var where = new List<string>();
-        if (companyColumn != null && companyId != null)
+        var where = new List<string>
         {
-            where.Add($"{QuoteIdentifier(companyColumn)} = @companyId");
-            var p = select.CreateParameter();
-            p.ParameterName = "@companyId";
-            p.Value = companyId;
-            select.Parameters.Add(p);
-        }
-        where.Add($"{QuoteIdentifier(softCol)} = {(DatabaseRuntime.IsPostgreSql() ? "FALSE" : "0")}");
+            $"{QuoteIdentifier(companyColumn!)} = @companyId",
+            $"{QuoteIdentifier(softCol)} = {(DatabaseRuntime.IsPostgreSql() ? "FALSE" : "0")}"
+        };
+        var companyParameter = select.CreateParameter();
+        companyParameter.ParameterName = "@companyId";
+        companyParameter.Value = companyId;
+        select.Parameters.Add(companyParameter);
 
         select.CommandText =
             $"SELECT {keySelect} FROM {QuoteIdentifier(table)}" +
@@ -694,14 +699,11 @@ public static class DataExportSvc
                 p.Value = rawKeys[i] ?? DBNull.Value;
                 cmd.Parameters.Add(p);
             }
-            if (companyColumn != null && companyId != null)
-            {
-                predicates.Add($"{QuoteIdentifier(companyColumn)} = @companyId");
-                var p = cmd.CreateParameter();
-                p.ParameterName = "@companyId";
-                p.Value = companyId;
-                cmd.Parameters.Add(p);
-            }
+            predicates.Add($"{QuoteIdentifier(companyColumn!)} = @companyId");
+            var companyParameter = cmd.CreateParameter();
+            companyParameter.ParameterName = "@companyId";
+            companyParameter.Value = companyId;
+            cmd.Parameters.Add(companyParameter);
 
             {
                 var deletedByCol = columns.FirstOrDefault(c => c.Equals("deleted_by", StringComparison.OrdinalIgnoreCase));
@@ -713,11 +715,6 @@ public static class DataExportSvc
                     sets.Add($"{QuoteIdentifier(deletedAtCol)} = @deletedAt");
                 if (deletedByCol != null)
                     sets.Add($"{QuoteIdentifier(deletedByCol)} = @deletedBy");
-                // Prefer inactive when column exists so working lists stay clean.
-                var isActiveCol = columns.FirstOrDefault(c => c.Equals("is_active", StringComparison.OrdinalIgnoreCase));
-                if (isActiveCol != null)
-                    sets.Add($"{QuoteIdentifier(isActiveCol)} = {(DatabaseRuntime.IsPostgreSql() ? "FALSE" : "0")}");
-
                 cmd.CommandText =
                     $"UPDATE {QuoteIdentifier(table)} SET {string.Join(", ", sets)} WHERE {string.Join(" AND ", predicates)}";
                 if (deletedAtCol != null)
