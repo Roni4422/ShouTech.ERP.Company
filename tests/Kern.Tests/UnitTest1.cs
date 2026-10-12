@@ -147,6 +147,16 @@ namespace Kern.Tests
             });
             Assert.Equal("TARGET-CODE", legacyRow["company_id"].GetString());
 
+            var legacyIdRow = new Dictionary<string, System.Text.Json.JsonElement>
+            {
+                ["company_id"] = System.Text.Json.JsonSerializer.SerializeToElement("SRC-ID")
+            };
+            remap.Invoke(null, new object?[]
+            {
+                legacyIdRow, "materials", "SRC-ID", "SRC-CODE", "TARGET-ID", "TARGET-CODE"
+            });
+            Assert.Equal("TARGET-CODE", legacyIdRow["company_id"].GetString());
+
             var relationalRow = new Dictionary<string, System.Text.Json.JsonElement>
             {
                 ["company_id"] = System.Text.Json.JsonSerializer.SerializeToElement("SRC-ID")
