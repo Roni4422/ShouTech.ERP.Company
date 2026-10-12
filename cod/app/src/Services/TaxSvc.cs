@@ -130,14 +130,15 @@ public static class TaxSvc
         {
             using var connection = Open(cs);
             using var cmd = connection.CreateCommand();
-            cmd.CommandText = """
+            var activeMaterialPredicate = DatabaseRuntime.IsPostgreSql() ? "is_deleted = FALSE" : "COALESCE(is_deleted,0)=0";
+            cmd.CommandText = $"""
                 SELECT material_id, COALESCE(NULLIF(pos_name,''), NULLIF(name_ar,''), NULLIF(name_en,''), code),
                        COALESCE(price_retail, price_list, 0),
                        COALESCE(default_unit, unit1, ''),
                        COALESCE(tax_rate, 0)
                 FROM materials
                 WHERE company_id=$c
-                  AND COALESCE(is_deleted,0)=0
+                  AND {activeMaterialPredicate}
                   AND (
                     code=$code OR alt_code=$code OR old_code=$code OR gtin=$code OR sku_external=$code
                     OR unit1_barcode=$code OR unit2_barcode=$code OR unit3_barcode=$code
