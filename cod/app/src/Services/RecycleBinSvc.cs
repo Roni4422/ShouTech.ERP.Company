@@ -52,6 +52,17 @@ public static class RecycleBinSvc
         bool DraftOnly = false);
 
     /// <summary>Master-data tables only. Transactional tables are intentionally excluded.</summary>
+    private static readonly string[] TransactionalTableNameTokens =
+    [
+        "voucher", "journal", "ledger", "document", "invoice", "movement", "transaction",
+        "payment", "receipt", "posting", "transfer", "order", "stock", "cash", "bank",
+        "entry", "entries", "line", "detail", "adjustment", "payroll", "production", "batch"
+    ];
+
+    private static bool IsTransactionalTableName(string tableName)
+        => TransactionalTableNameTokens.Any(token =>
+            tableName.Contains(token, StringComparison.OrdinalIgnoreCase));
+
     private static readonly BinTableDefinition[] Catalog =
     [
         new("sales_documents", "Sales invoices",
@@ -60,12 +71,6 @@ public static class RecycleBinSvc
         new("purchase_documents", "Purchase invoices",
             ["doc_no", "party_name", "doc_id"],
             ["doc_id"], CompanyIdIsCode: true, DraftOnly: true),
-        new("receipt_vouchers", "Receipt vouchers",
-            ["voucher_no", "doc_no", "number", "description", "id"],
-            ["voucher_id", "receipt_voucher_id", "id"]),
-        new("payment_vouchers", "Payment vouchers",
-            ["voucher_no", "doc_no", "number", "description", "id"],
-            ["voucher_id", "payment_voucher_id", "id"]),
         new("products", "Products",
             ["product_name_ar", "product_name_en", "product_name", "name", "code", "barcode"],
             ["product_id", "id"]),
@@ -123,39 +128,9 @@ public static class RecycleBinSvc
             .Where(definition => existingTables.Contains(definition.TableName))
             .ToDictionary(definition => definition.TableName, StringComparer.OrdinalIgnoreCase);
 
-        // Automatically discover additional company-scoped tables using the standard soft-delete flag.
-        foreach (var tableName in existingTables)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (definitions.ContainsKey(tableName) || !SafeIdentifier.IsMatch(tableName))
-                continue;
-            try
-            {
-                var columns = await GetColumnNamesAsync(connection, tableName, cancellationToken).ConfigureAwait(false);
-                if (FindColumn(columns, "is_deleted") is null)
-                    continue;
-                var primaryKey = InferPrimaryKey(tableName, columns);
-                if (primaryKey is null)
-                    continue;
-                var companyColumn = FindColumn(columns, "company_id") ?? FindColumn(columns, "companyid");
-                if (companyColumn is null)
-                    continue;
-
-                var isInvoice = tableName.Equals("sales_documents", StringComparison.OrdinalIgnoreCase)
-                    || tableName.Equals("purchase_documents", StringComparison.OrdinalIgnoreCase);
-                definitions[tableName] = new BinTableDefinition(
-                    tableName,
-                    HumanizeTableName(tableName),
-                    ["name_ar", "name", "description", "doc_no", "voucher_no", "code", "number", "title", "id"],
-                    [primaryKey],
-                    CompanyIdIsCode: isInvoice,
-                    DraftOnly: isInvoice);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                LogWarning($"Dynamic discovery skipped table '{tableName}': {ex.Message}");
-            }
-        }
+        // Deliberately do not auto-discover tables: posted accounting and inventory transactions
+        // must never become purgeable merely because a schema adds an is_deleted flag.
+        // Add new master-data tables to the reviewed catalog above only after checking their relationships.
 
         foreach (var definition in definitions.Values)
         {
