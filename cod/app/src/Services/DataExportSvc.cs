@@ -321,8 +321,11 @@ public static class DataExportSvc
 
         var translatedHeaders = columns.ToDictionary(
             c => c.HeaderTextKey,
-            c => AppServiceHost.Localization.GetString(
-                $"DataExchange.Columns.{ToSnakeCase(c.HeaderTextKey)}", Humanize(c.HeaderTextKey)),
+            c => GetExportHeaderLabel(
+                option.TableName,
+                c.HeaderTextKey,
+                AppServiceHost.Localization.GetString(
+                    $"DataExchange.Columns.{ToSnakeCase(c.HeaderTextKey)}", Humanize(c.HeaderTextKey))),
             StringComparer.Ordinal);
 
         return new XptServ.ExportModel
@@ -339,6 +342,18 @@ public static class DataExportSvc
             Translate = key => translatedHeaders.TryGetValue(key, out var label) ? label : key,
             DatasetIdentityHeader = CreateDatasetIdentityHeader(option, columns, translatedHeaders)
         };
+    }
+
+    internal static string GetExportHeaderLabel(string tableName, string fieldName, string translatedLabel)
+    {
+        // Keep the database field name (name_ar) in the encrypted dataset identity,
+        // but use the neutral, user-facing Excel header "name" for material cards.
+        // This lets users maintain a single name column without exposing an implementation detail.
+        if (tableName.Equals("materials", StringComparison.OrdinalIgnoreCase) &&
+            fieldName.Equals("name_ar", StringComparison.OrdinalIgnoreCase))
+            return "name";
+
+        return translatedLabel;
     }
 
     internal static IReadOnlyList<string> GetMaterialCardExportFieldNames(
@@ -672,7 +687,15 @@ public static class DataExportSvc
                 {
                     var cellIndex = columnIndexes[mapping.Key];
                     var cell = cellIndex < sourceRow.Count ? sourceRow[cellIndex] : null;
-                    values[mapping.Value.field] = ParseExcelValue(cell, mapping.Value.type);
+                    var parsedValue = ParseExcelValue(cell, mapping.Value.type);
+                    // The legacy materials schema requires name_ar to be non-NULL.
+                    // A blank optional Excel "name" is stored as an empty string,
+                    // so users are not forced to provide a name during import.
+                    if (option.TableName.Equals("materials", StringComparison.OrdinalIgnoreCase) &&
+                        mapping.Value.field.Equals("name_ar", StringComparison.OrdinalIgnoreCase) &&
+                        parsedValue is null)
+                        parsedValue = string.Empty;
+                    values[mapping.Value.field] = parsedValue;
                 }
 
                 if (companyColumn != null)
