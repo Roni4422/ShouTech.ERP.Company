@@ -996,10 +996,12 @@ ORDER BY kcu.ordinal_position;";
             if (await update.ExecuteNonQueryAsync(ct) > 0) return;
         }
 
-        await InsertDatasetRowOnlyAsync(db, tx, provider, table, row, columns, ct);
+        var inserted = await InsertDatasetRowOnlyAsync(db, tx, provider, table, row, columns, ct);
+        if (inserted == 0)
+            throw new InvalidDataException($"A primary-key conflict exists outside the active company scope in '{table}'. No existing record was overwritten.");
     }
 
-    private static async Task InsertDatasetRowOnlyAsync(
+    private static async Task<int> InsertDatasetRowOnlyAsync(
         DbConnection db, DbTransaction tx, string provider, string table,
         Dictionary<string, JsonElement> row, List<string> columns, CancellationToken ct)
     {
@@ -1014,7 +1016,7 @@ ORDER BY kcu.ordinal_position;";
         cmd.Transaction = tx;
         cmd.CommandText = $"INSERT INTO {Quote(table)} ({names}) VALUES ({pars}){suffix};";
         for (var i = 0; i < selected.Count; i++) AddParameter(cmd, "@p" + i, FromJson(row[selected[i]]));
-        await cmd.ExecuteNonQueryAsync(ct);
+        return await cmd.ExecuteNonQueryAsync(ct);
     }
 
     private static async Task InsertIgnoreAsync(DbConnection db, DbTransaction tx, string provider, string table, Dictionary<string, JsonElement> row, List<string> columns, CancellationToken ct)
