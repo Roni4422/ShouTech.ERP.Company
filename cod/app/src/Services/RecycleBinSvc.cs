@@ -179,6 +179,18 @@ public static class RecycleBinSvc
             .ToList();
     }
 
+    /// <summary>
+    /// Installs persistent delete-audit infrastructure for the currently configured database.
+    /// Safe to call repeatedly during startup.
+    /// </summary>
+    public static async Task InitializeAuditInfrastructureAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureDeletionAuditTableAsync(connection, cancellationToken).ConfigureAwait(false);
+    }
+
     public static async Task<int> CountAsync(
         string companyCode,
         CancellationToken cancellationToken = default)
