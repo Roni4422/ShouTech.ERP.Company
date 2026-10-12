@@ -57,7 +57,7 @@
                 <Grid x:Name="ImportPasswordGrid" Margin="8,7,8,0">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <TextBlock x:Name="ImportPasswordLabel" Grid.Column="0" Text="Package password" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <PasswordBox x:Name="ImportPasswordBox" Grid.Column="1" Style="{DynamicResource VisuPasswordBoxStyle}" Height="28" Padding="7,4"/>
+                    <PasswordBox x:Name="ImportPasswordBox" Grid.Column="1" Style="{DynamicResource VisuPasswordBoxStyle}" Height="28" Padding="7,4" PasswordChanged="ImportPasswordBox_PasswordChanged"/>
                     <Button x:Name="ReadPackageInfoButton" Grid.Column="2" Style="{DynamicResource VisuSecondaryButtonStyle}" Content="Read file info" Margin="8,0,0,0" Padding="10,4" Click="ReadPackageInfo_Click"/>
                 </Grid>
                 <TextBlock x:Name="ImportPackageInfoLabel" Margin="8,8,8,3" FontWeight="SemiBold" Text="Encrypted package details"/>
