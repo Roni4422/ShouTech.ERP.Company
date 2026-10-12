@@ -1,19 +1,22 @@
 {
   "version": 2,
-  "dgSpecHash": "61RsOcU0GNA=",
+  "dgSpecHash": "0EYFBpFhALs=",
   "success": true,
-  "projectFilePath": "C:\\Users\\Mansho\\Downloads\\ShouTech.ERP.Company\\src\\ShouTech.Infrastructure\\ShouTech.Infrastructure.csproj",
+  "projectFilePath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Infrastructure/ShouTech.Infrastructure.csproj",
   "expectedPackageFiles": [
-    "C:\\Users\\Mansho\\.nuget\\packages\\microsoft.data.sqlite\\9.0.0\\microsoft.data.sqlite.9.0.0.nupkg.sha512",
-    "C:\\Users\\Mansho\\.nuget\\packages\\microsoft.data.sqlite.core\\9.0.0\\microsoft.data.sqlite.core.9.0.0.nupkg.sha512",
-    "C:\\Users\\Mansho\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\8.0.2\\microsoft.extensions.dependencyinjection.abstractions.8.0.2.nupkg.sha512",
-    "C:\\Users\\Mansho\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\8.0.2\\microsoft.extensions.logging.abstractions.8.0.2.nupkg.sha512",
-    "C:\\Users\\Mansho\\.nuget\\packages\\npgsql\\9.0.2\\npgsql.9.0.2.nupkg.sha512",
-    "C:\\Users\\Mansho\\.nuget\\packages\\sqlitepclraw.bundle_e_sqlite3\\2.1.10\\sqlitepclraw.bundle_e_sqlite3.2.1.10.nupkg.sha512",
-    "C:\\Users\\Mansho\\.nuget\\packages\\sqlitepclraw.core\\2.1.10\\sqlitepclraw.core.2.1.10.nupkg.sha512",
-    "C:\\Users\\Mansho\\.nuget\\packages\\sqlitepclraw.lib.e_sqlite3\\2.1.10\\sqlitepclraw.lib.e_sqlite3.2.1.10.nupkg.sha512",
-    "C:\\Users\\Mansho\\.nuget\\packages\\sqlitepclraw.provider.e_sqlite3\\2.1.10\\sqlitepclraw.provider.e_sqlite3.2.1.10.nupkg.sha512",
-    "C:\\Users\\Mansho\\.nuget\\packages\\system.memory\\4.5.3\\system.memory.4.5.3.nupkg.sha512"
+    "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages/microsoft.data.sqlite/9.0.0/microsoft.data.sqlite.9.0.0.nupkg.sha512",
+    "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages/microsoft.data.sqlite.core/9.0.0/microsoft.data.sqlite.core.9.0.0.nupkg.sha512",
+    "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages/microsoft.extensions.dependencyinjection.abstractions/8.0.2/microsoft.extensions.dependencyinjection.abstractions.8.0.2.nupkg.sha512",
+    "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages/microsoft.extensions.logging.abstractions/8.0.2/microsoft.extensions.logging.abstractions.8.0.2.nupkg.sha512",
+    "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages/npgsql/9.0.2/npgsql.9.0.2.nupkg.sha512",
+    "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages/sqlitepclraw.bundle_e_sqlite3/2.1.10/sqlitepclraw.bundle_e_sqlite3.2.1.10.nupkg.sha512",
+    "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages/sqlitepclraw.core/2.1.10/sqlitepclraw.core.2.1.10.nupkg.sha512",
+    "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages/sqlitepclraw.lib.e_sqlite3/2.1.10/sqlitepclraw.lib.e_sqlite3.2.1.10.nupkg.sha512",
+    "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages/sqlitepclraw.provider.e_sqlite3/2.1.10/sqlitepclraw.provider.e_sqlite3.2.1.10.nupkg.sha512",
+    "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages/system.memory/4.5.3/system.memory.4.5.3.nupkg.sha512",
+    "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages/microsoft.netcore.app.ref/8.0.31/microsoft.netcore.app.ref.8.0.31.nupkg.sha512",
+    "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages/microsoft.windowsdesktop.app.ref/8.0.31/microsoft.windowsdesktop.app.ref.8.0.31.nupkg.sha512",
+    "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages/microsoft.aspnetcore.app.ref/8.0.31/microsoft.aspnetcore.app.ref.8.0.31.nupkg.sha512"
   ],
   "logs": []
 }

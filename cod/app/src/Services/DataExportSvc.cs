@@ -344,7 +344,7 @@ public static class DataExportSvc
         };
     }
 
-    internal static object? NormalizeImportedValue(string tableName, string fieldName, object? value)
+    public static object? NormalizeImportedValue(string tableName, string fieldName, object? value)
     {
         // The legacy materials schema requires name_ar to be non-NULL.
         // A blank optional Excel "name" is stored as an empty string.
@@ -356,7 +356,7 @@ public static class DataExportSvc
         return value;
     }
 
-    internal static string GetExportHeaderLabel(string tableName, string fieldName, string translatedLabel)
+    public static string GetExportHeaderLabel(string tableName, string fieldName, string translatedLabel)
     {
         // Keep the database field name (name_ar) in the encrypted dataset identity,
         // but use the neutral, user-facing Excel header "name" for material cards.
