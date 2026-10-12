@@ -93,7 +93,7 @@ internal sealed class SteiManifest
     public string TargetDatabaseProvider { get; set; } = "";
     public string ApplicationVersion { get; set; } = "";
     public string DataScope { get; set; } = "CompanyData";
-    public string OperationId { get; set; } = Guid.NewGuid().ToString("D");
+    public string OperationId { get; set; } = "";
     public string OperationType { get; set; } = "Export";
     public string DatasetKey { get; set; } = "";
     public string DatasetTableName { get; set; } = "";
@@ -552,6 +552,7 @@ internal static class SteiSvc
         var user = AppState.CurrentUser;
         return new SteiManifest
         {
+            OperationId = Guid.NewGuid().ToString("D"),
             ExportedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
             ExportedLocal = now.ToString("O"),
             ExportedByUserId = user?.Id ?? "",
