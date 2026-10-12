@@ -1228,6 +1228,8 @@ internal static class MatRepo
         using var command = connection.CreateCommand();
         command.CommandText = DatabaseRuntime.IsPostgreSql() ? SchemaPostgres : SchemaSqlite;
         command.ExecuteNonQuery();
+        EnsureColumn(connection, "materials", "deleted_at", DatabaseRuntime.IsPostgreSql() ? "TIMESTAMPTZ" : "TEXT");
+        EnsureColumn(connection, "materials", "deleted_by", "TEXT");
     }
 
     public sealed class StockRec
@@ -1425,9 +1427,11 @@ internal static class MatRepo
         EnsureSchema();
         using var connection = Open(cs);
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE materials SET is_deleted=1, updated_at=CURRENT_TIMESTAMP WHERE company_id=$company AND material_id=$id AND COALESCE(is_deleted,0)=0";
+        command.CommandText = "UPDATE materials SET is_deleted=1, deleted_at=$deletedAt, deleted_by=$deletedBy, updated_at=CURRENT_TIMESTAMP WHERE company_id=$company AND material_id=$id AND COALESCE(is_deleted,0)=0";
         Add(command, "$company", companyCode);
         Add(command, "$id", id);
+        Add(command, "$deletedAt", DateTimeOffset.UtcNow);
+        Add(command, "$deletedBy", AppState.CurrentUser?.Username);
         var affected = command.ExecuteNonQuery();
         if (affected == 0)
             throw new InvalidOperationException("The material was not found in the selected company or has already been deleted.");
@@ -1941,6 +1945,8 @@ internal static class MatRepo
 		EnsureColumn(conn, "material_groups", "created_at", "TEXT");
 		EnsureColumn(conn, "material_groups", "updated_by", "TEXT");
 		EnsureColumn(conn, "material_groups", "updated_at", "TEXT");
+		EnsureColumn(conn, "material_groups", "deleted_at", DatabaseRuntime.IsPostgreSql() ? "TIMESTAMPTZ" : "TEXT");
+		EnsureColumn(conn, "material_groups", "deleted_by", "TEXT");
 
 		// Permanent per-company card-number sequence.
 		using (var cmd = conn.CreateCommand())
