@@ -618,9 +618,15 @@ internal static class SteiSvc
                     var primaryKeys = await GetPrimaryKeyColumnsAsync(db, provider, pair.Key, ct);
                     if (companyColumn == null || !columns.Contains("is_deleted", StringComparer.OrdinalIgnoreCase) || primaryKeys.Count == 0)
                         throw new InvalidOperationException($"Replace mode is not safe for '{pair.Key}': company scope, soft-delete support, and primary keys are required.");
-                    var activeCompany = AppState.CurrentUser?.CompanyId ?? AppState.CurrentCompanyCode;
+                    if (pair.Value.Count == 0 ||
+                        !pair.Value[0].TryGetValue(companyColumn, out var companyElement))
+                        throw new InvalidOperationException($"Replace mode cannot determine the company scope from package rows for '{pair.Key}'.");
+                    var activeCompany = Convert.ToString(FromJson(companyElement), CultureInfo.InvariantCulture);
                     if (string.IsNullOrWhiteSpace(activeCompany))
-                        throw new InvalidOperationException("The active company could not be resolved for replace mode.");
+                        throw new InvalidOperationException("The package has no usable company scope for replace mode.");
+                    if (pair.Value.Any(row => !row.TryGetValue(companyColumn, out var rowCompany) ||
+                        !string.Equals(Convert.ToString(FromJson(rowCompany), CultureInfo.InvariantCulture), activeCompany, StringComparison.OrdinalIgnoreCase)))
+                        throw new InvalidOperationException($"The package contains multiple company scopes for '{pair.Key}'. Replace mode was cancelled.");
                     var keep = importedKeysByTable.TryGetValue(pair.Key, out var imported)
                         ? imported : new HashSet<string>(StringComparer.Ordinal);
                     await SoftDeleteMissingDatasetRowsAsync(db, tx, provider, pair.Key, columns,
@@ -852,7 +858,7 @@ internal static class SteiSvc
         await using var select = db.CreateCommand();
         select.Transaction = tx;
         select.CommandText = $"SELECT {string.Join(",", primaryKeys.Select(Quote))} FROM {Quote(table)} " +
-            $"WHERE {Quote(companyColumn)}=@company AND ({Quote(deletedColumn)}=FALSE OR {Quote(deletedColumn)} IS NULL);";
+            $"WHERE CAST({Quote(companyColumn)} AS TEXT)=CAST(@company AS TEXT) AND ({Quote(deletedColumn)}=FALSE OR {Quote(deletedColumn)} IS NULL);";
         AddParameter(select, "@company", activeCompany);
         var missing = new List<object?[]>();
         await using (var reader = await select.ExecuteReaderAsync(ct))
@@ -874,7 +880,7 @@ internal static class SteiSvc
             var set = Quote(deletedColumn) + "=TRUE";
             if (deletedAtColumn != null) set += "," + Quote(deletedAtColumn) + "=@deletedAt";
             var predicates = primaryKeys.Select((key, i) => Quote(key) + "=@k" + i).ToList();
-            predicates.Add(Quote(companyColumn) + "=@company");
+            predicates.Add("CAST(" + Quote(companyColumn) + " AS TEXT)=CAST(@company AS TEXT)");
             update.CommandText = $"UPDATE {Quote(table)} SET {set} WHERE {string.Join(" AND ", predicates)};";
             AddParameter(update, "@company", activeCompany);
             if (deletedAtColumn != null) AddParameter(update, "@deletedAt", DateTimeOffset.UtcNow);
@@ -919,7 +925,8 @@ ORDER BY kcu.ordinal_position;";
     private static string BuildSteiCompositeKey(
         IReadOnlyDictionary<string, JsonElement> row, IReadOnlyList<string> keys)
         => string.Join("\u001f", keys.Select(key => row.TryGetValue(key, out var value)
-            ? value.GetRawText() : "<missing>"));
+            ? Convert.ToString(FromJson(value), CultureInfo.InvariantCulture) ?? string.Empty
+            : "<missing>"));
 
     // Posted documents and inventory/valuation history must never be overwritten by
     // a generic data package. Such datasets are insert-only; reversals/cancellations
@@ -945,7 +952,7 @@ ORDER BY kcu.ordinal_position;";
         var includeCompanyScope = companyColumn != null &&
             !primaryKeys.Contains(companyColumn, StringComparer.OrdinalIgnoreCase);
         if (includeCompanyScope)
-            predicates.Add(Quote(companyColumn!) + "=@companyScope");
+            predicates.Add("CAST(" + Quote(companyColumn!) + " AS TEXT)=CAST(@companyScope AS TEXT)");
         var where = string.Join(" AND ", predicates);
         await using var update = db.CreateCommand();
         update.Transaction = tx;
