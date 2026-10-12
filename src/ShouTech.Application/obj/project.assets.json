@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "targets": {
     "net8.0": {
       "ShouTech.Domain/1.0.0": {
@@ -27,20 +27,20 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\Mansho\\.nuget\\packages\\": {}
+    "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Mansho\\Downloads\\ShouTech.ERP.Company\\src\\ShouTech.Application\\ShouTech.Application.csproj",
+      "projectUniqueName": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Application/ShouTech.Application.csproj",
       "projectName": "ShouTech.Application",
-      "projectPath": "C:\\Users\\Mansho\\Downloads\\ShouTech.ERP.Company\\src\\ShouTech.Application\\ShouTech.Application.csproj",
-      "packagesPath": "C:\\Users\\Mansho\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\Mansho\\Downloads\\ShouTech.ERP.Company\\src\\ShouTech.Application\\obj\\",
+      "projectPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Application/ShouTech.Application.csproj",
+      "packagesPath": "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages",
+      "outputPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Application/obj/",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "C:\\Users\\Mansho\\Downloads\\ShouTech.ERP.Company\\NuGet.Config",
-        "C:\\Users\\Mansho\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/nuget.config",
+        "/home/runner/.nuget/NuGet/NuGet.Config"
       ],
       "originalTargetFrameworks": [
         "net8.0"
@@ -50,10 +50,11 @@
       },
       "frameworks": {
         "net8.0": {
+          "framework": "net8.0",
           "targetAlias": "net8.0",
           "projectReferences": {
-            "C:\\Users\\Mansho\\Downloads\\ShouTech.ERP.Company\\src\\ShouTech.Domain\\ShouTech.Domain.csproj": {
-              "projectPath": "C:\\Users\\Mansho\\Downloads\\ShouTech.ERP.Company\\src\\ShouTech.Domain\\ShouTech.Domain.csproj"
+            "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Domain/ShouTech.Domain.csproj": {
+              "projectPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Domain/ShouTech.Domain.csproj"
             }
           }
         }
@@ -67,10 +68,12 @@
         "enableAudit": "false",
         "auditLevel": "low",
         "auditMode": "direct"
-      }
+      },
+      "SdkAnalysisLevel": "10.0.400"
     },
     "frameworks": {
       "net8.0": {
+        "framework": "net8.0",
         "targetAlias": "net8.0",
         "imports": [
           "net461",
@@ -83,12 +86,26 @@
         ],
         "assetTargetFallback": true,
         "warn": true,
+        "downloadDependencies": [
+          {
+            "name": "Microsoft.AspNetCore.App.Ref",
+            "version": "[8.0.31, 8.0.31]"
+          },
+          {
+            "name": "Microsoft.NETCore.App.Ref",
+            "version": "[8.0.31, 8.0.31]"
+          },
+          {
+            "name": "Microsoft.WindowsDesktop.App.Ref",
+            "version": "[8.0.31, 8.0.31]"
+          }
+        ],
         "frameworkReferences": {
           "Microsoft.NETCore.App": {
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.425/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/10.0.401/PortableRuntimeIdentifierGraph.json"
       }
     }
   }

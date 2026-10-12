@@ -1,0 +1,587 @@
+{
+  "format": 1,
+  "restore": {
+    "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/tests/Kern.Tests/Kern.Tests.csproj": {}
+  },
+  "projects": {
+    "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/cod/app/src/MainApp.csproj": {
+      "version": "10.6.0",
+      "restore": {
+        "projectUniqueName": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/cod/app/src/MainApp.csproj",
+        "projectName": "ShouTech.ERP",
+        "projectPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/cod/app/src/MainApp.csproj",
+        "packagesPath": "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages",
+        "outputPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/cod/app/src/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/nuget.config",
+          "/home/runner/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0-windows"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0-windows": {
+            "framework": "net8.0-windows7.0",
+            "targetAlias": "net8.0-windows",
+            "projectReferences": {
+              "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/cod/cor/inv.csproj": {
+                "projectPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/cod/cor/inv.csproj"
+              },
+              "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Application/ShouTech.Application.csproj": {
+                "projectPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Application/ShouTech.Application.csproj"
+              },
+              "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Domain/ShouTech.Domain.csproj": {
+                "projectPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Domain/ShouTech.Domain.csproj"
+              },
+              "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Infrastructure/ShouTech.Infrastructure.csproj": {
+                "projectPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Infrastructure/ShouTech.Infrastructure.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "false",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.400"
+      },
+      "frameworks": {
+        "net8.0-windows": {
+          "framework": "net8.0-windows7.0",
+          "targetAlias": "net8.0-windows",
+          "dependencies": {
+            "CommunityToolkit.Mvvm": {
+              "target": "Package",
+              "version": "[8.2.2, )"
+            },
+            "Dapper": {
+              "target": "Package",
+              "version": "[2.1.44, )"
+            },
+            "Microsoft.Data.Sqlite": {
+              "target": "Package",
+              "version": "[9.0.0, )"
+            },
+            "Microsoft.Extensions.Hosting": {
+              "target": "Package",
+              "version": "[8.0.1, )"
+            },
+            "Npgsql": {
+              "target": "Package",
+              "version": "[9.0.2, )"
+            },
+            "SQLitePCLRaw.lib.e_sqlite3": {
+              "target": "Package",
+              "version": "[2.1.12, )"
+            },
+            "Serilog": {
+              "target": "Package",
+              "version": "[4.2.0, )"
+            },
+            "Serilog.Extensions.Hosting": {
+              "target": "Package",
+              "version": "[8.0.0, )"
+            },
+            "Serilog.Sinks.Console": {
+              "target": "Package",
+              "version": "[6.0.0, )"
+            },
+            "Serilog.Sinks.File": {
+              "target": "Package",
+              "version": "[6.0.0, )"
+            },
+            "System.Security.Cryptography.ProtectedData": {
+              "target": "Package",
+              "version": "[8.0.0, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.AspNetCore.App.Ref",
+              "version": "[8.0.31, 8.0.31]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Host.linux-x64",
+              "version": "[8.0.31, 8.0.31]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Ref",
+              "version": "[8.0.31, 8.0.31]"
+            },
+            {
+              "name": "Microsoft.WindowsDesktop.App.Ref",
+              "version": "[8.0.31, 8.0.31]"
+            }
+          ],
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            },
+            "Microsoft.WindowsDesktop.App.WPF": {
+              "privateAssets": "none"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/10.0.401/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/cod/cor/inv.csproj": {
+      "version": "10.3.0",
+      "restore": {
+        "projectUniqueName": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/cod/cor/inv.csproj",
+        "projectName": "ShouTech.Core.Inv",
+        "projectPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/cod/cor/inv.csproj",
+        "packagesPath": "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages",
+        "outputPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/cod/cor/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/nuget.config",
+          "/home/runner/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "framework": "net8.0",
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Domain/ShouTech.Domain.csproj": {
+                "projectPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Domain/ShouTech.Domain.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "false",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.400"
+      },
+      "frameworks": {
+        "net8.0": {
+          "framework": "net8.0",
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "Dapper": {
+              "target": "Package",
+              "version": "[2.1.44, )"
+            },
+            "Microsoft.Extensions.Caching.Memory": {
+              "target": "Package",
+              "version": "[8.0.1, )"
+            },
+            "Microsoft.Extensions.Logging.Abstractions": {
+              "target": "Package",
+              "version": "[8.0.2, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.AspNetCore.App.Ref",
+              "version": "[8.0.31, 8.0.31]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Ref",
+              "version": "[8.0.31, 8.0.31]"
+            },
+            {
+              "name": "Microsoft.WindowsDesktop.App.Ref",
+              "version": "[8.0.31, 8.0.31]"
+            }
+          ],
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/10.0.401/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Application/ShouTech.Application.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Application/ShouTech.Application.csproj",
+        "projectName": "ShouTech.Application",
+        "projectPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Application/ShouTech.Application.csproj",
+        "packagesPath": "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages",
+        "outputPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Application/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/nuget.config",
+          "/home/runner/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "framework": "net8.0",
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Domain/ShouTech.Domain.csproj": {
+                "projectPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Domain/ShouTech.Domain.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "false",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.400"
+      },
+      "frameworks": {
+        "net8.0": {
+          "framework": "net8.0",
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.AspNetCore.App.Ref",
+              "version": "[8.0.31, 8.0.31]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Ref",
+              "version": "[8.0.31, 8.0.31]"
+            },
+            {
+              "name": "Microsoft.WindowsDesktop.App.Ref",
+              "version": "[8.0.31, 8.0.31]"
+            }
+          ],
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/10.0.401/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Domain/ShouTech.Domain.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Domain/ShouTech.Domain.csproj",
+        "projectName": "ShouTech.Domain",
+        "projectPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Domain/ShouTech.Domain.csproj",
+        "packagesPath": "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages",
+        "outputPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Domain/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/nuget.config",
+          "/home/runner/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "framework": "net8.0",
+            "targetAlias": "net8.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "false",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.400"
+      },
+      "frameworks": {
+        "net8.0": {
+          "framework": "net8.0",
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.AspNetCore.App.Ref",
+              "version": "[8.0.31, 8.0.31]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Ref",
+              "version": "[8.0.31, 8.0.31]"
+            },
+            {
+              "name": "Microsoft.WindowsDesktop.App.Ref",
+              "version": "[8.0.31, 8.0.31]"
+            }
+          ],
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/10.0.401/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Infrastructure/ShouTech.Infrastructure.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Infrastructure/ShouTech.Infrastructure.csproj",
+        "projectName": "ShouTech.Infrastructure",
+        "projectPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Infrastructure/ShouTech.Infrastructure.csproj",
+        "packagesPath": "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages",
+        "outputPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Infrastructure/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/nuget.config",
+          "/home/runner/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "framework": "net8.0",
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Domain/ShouTech.Domain.csproj": {
+                "projectPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/src/ShouTech.Domain/ShouTech.Domain.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "false",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.400"
+      },
+      "frameworks": {
+        "net8.0": {
+          "framework": "net8.0",
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "Microsoft.Data.Sqlite": {
+              "target": "Package",
+              "version": "[9.0.0, )"
+            },
+            "Npgsql": {
+              "target": "Package",
+              "version": "[9.0.2, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.AspNetCore.App.Ref",
+              "version": "[8.0.31, 8.0.31]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Ref",
+              "version": "[8.0.31, 8.0.31]"
+            },
+            {
+              "name": "Microsoft.WindowsDesktop.App.Ref",
+              "version": "[8.0.31, 8.0.31]"
+            }
+          ],
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/10.0.401/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/tests/Kern.Tests/Kern.Tests.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/tests/Kern.Tests/Kern.Tests.csproj",
+        "projectName": "Kern.Tests",
+        "projectPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/tests/Kern.Tests/Kern.Tests.csproj",
+        "packagesPath": "/tmp/codeql-scratch-3c49e43f8ce2bc56/dbs/csharp/working/packages",
+        "outputPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/tests/Kern.Tests/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/nuget.config",
+          "/home/runner/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0-windows"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0-windows": {
+            "framework": "net8.0-windows7.0",
+            "targetAlias": "net8.0-windows",
+            "projectReferences": {
+              "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/cod/app/src/MainApp.csproj": {
+                "projectPath": "/home/runner/work/ShouTech.ERP.Company/ShouTech.ERP.Company/cod/app/src/MainApp.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "false",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.400"
+      },
+      "frameworks": {
+        "net8.0-windows": {
+          "framework": "net8.0-windows7.0",
+          "targetAlias": "net8.0-windows",
+          "dependencies": {
+            "Microsoft.NET.Test.Sdk": {
+              "target": "Package",
+              "version": "[17.8.0, )"
+            },
+            "xunit": {
+              "target": "Package",
+              "version": "[2.4.2, )"
+            },
+            "xunit.runner.visualstudio": {
+              "target": "Package",
+              "version": "[2.4.5, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.AspNetCore.App.Ref",
+              "version": "[8.0.31, 8.0.31]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Ref",
+              "version": "[8.0.31, 8.0.31]"
+            },
+            {
+              "name": "Microsoft.WindowsDesktop.App.Ref",
+              "version": "[8.0.31, 8.0.31]"
+            }
+          ],
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            },
+            "Microsoft.WindowsDesktop.App.WPF": {
+              "privateAssets": "none"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/10.0.401/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}
