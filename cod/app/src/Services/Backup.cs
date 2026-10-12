@@ -558,7 +558,7 @@ internal static class SteiSvc
                         var valid = row.Keys.All(k => columns.Contains(k, StringComparer.OrdinalIgnoreCase));
                         if (!valid) throw new InvalidDataException($"Column mismatch in {pair.Key}.");
                         RemapCompanyId(row, manifest.SourceCompanyId,
-                            AppState.CurrentCompanyCode ?? AppState.CurrentUser?.CompanyId);
+                            AppState.CurrentUser?.CompanyId ?? AppState.CurrentCompanyCode);
                         if (expectedDatasetKey != null)
                         {
                             var primaryKeys = await GetPrimaryKeyColumnsAsync(db, provider, pair.Key, ct);
@@ -853,7 +853,15 @@ ORDER BY kcu.ordinal_position;";
     {
         var selected = columns.Where(c => row.ContainsKey(c)).ToList();
         if (selected.Count == 0) throw new InvalidDataException($"No compatible values were supplied for '{table}'.");
-        var where = string.Join(" AND ", primaryKeys.Select((key, i) => Quote(key) + "=@k" + i));
+        var companyColumn = selected.FirstOrDefault(c =>
+            c.Equals("company_id", StringComparison.OrdinalIgnoreCase) ||
+            c.Equals("companyid", StringComparison.OrdinalIgnoreCase));
+        var predicates = primaryKeys.Select((key, i) => Quote(key) + "=@k" + i).ToList();
+        var includeCompanyScope = companyColumn != null &&
+            !primaryKeys.Contains(companyColumn, StringComparer.OrdinalIgnoreCase);
+        if (includeCompanyScope)
+            predicates.Add(Quote(companyColumn!) + "=@companyScope");
+        var where = string.Join(" AND ", predicates);
         await using var update = db.CreateCommand();
         update.Transaction = tx;
         var updates = selected.Where(c => !primaryKeys.Contains(c, StringComparer.OrdinalIgnoreCase)).ToList();
@@ -863,6 +871,8 @@ ORDER BY kcu.ordinal_position;";
                 string.Join(",", updates.Select((c, i) => Quote(c) + "=@u" + i)) + " WHERE " + where + ";";
             for (var i = 0; i < updates.Count; i++) AddParameter(update, "@u" + i, FromJson(row[updates[i]]));
             for (var i = 0; i < primaryKeys.Count; i++) AddParameter(update, "@k" + i, FromJson(row[primaryKeys[i]]));
+            if (includeCompanyScope)
+                AddParameter(update, "@companyScope", FromJson(row[companyColumn!]));
             if (await update.ExecuteNonQueryAsync(ct) > 0) return;
         }
 
