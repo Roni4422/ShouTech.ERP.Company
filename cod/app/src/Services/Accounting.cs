@@ -498,11 +498,17 @@ internal static class AccRepo
 
             using var command = connection.CreateCommand();
             command.Transaction = transaction;
-            command.CommandText = "DELETE FROM accounts WHERE company_id=$company AND account_id=$id AND is_deleted=0;";
+            var deletedValue = DatabaseRuntime.IsPostgreSql() ? "TRUE" : "1";
+            var activeValue = DatabaseRuntime.IsPostgreSql() ? "FALSE" : "0";
+            command.CommandText = $"""
+                UPDATE accounts
+                SET is_deleted={deletedValue}
+                WHERE company_id=$company AND account_id=$id AND is_deleted={activeValue};
+                """;
             Add(command, "$company", AppState.CurrentCompanyCode ?? string.Empty);
             Add(command, "$id", account.Id);
             if (command.ExecuteNonQuery() != 1)
-                throw new InvalidOperationException("تعذر حذف الحساب لأنه لم يعد موجودًا في الشركة الحالية.");
+                throw new InvalidOperationException("تعذر نقل الحساب إلى سلة المحذوفات لأنه لم يعد موجودًا في الشركة الحالية.");
 
             transaction.Commit();
         }
