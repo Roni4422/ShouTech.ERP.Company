@@ -305,6 +305,7 @@ internal static class SteiSvc
 
         var provider = DatabaseRuntime.GetProvider();
         var manifest = BuildManifest(provider);
+        manifest.SchemaVersion = 2;
         manifest.DataScope = $"Dataset:{datasetKey}";
         manifest.OperationType = "DatasetExport";
         manifest.DatasetKey = datasetKey;
@@ -603,7 +604,7 @@ internal static class SteiSvc
     {
         if (!string.Equals(m.Format, "SHOUTECH-STEI", StringComparison.Ordinal)) throw new InvalidDataException("Invalid STEI format.");
         if (m.FormatVersion != 1) throw new InvalidDataException($"Unsupported STEI format version: {m.FormatVersion}.");
-        if (m.SchemaVersion != 1) throw new InvalidDataException($"Unsupported STEI schema version: {m.SchemaVersion}.");
+        if (m.SchemaVersion is < 1 or > 2) throw new InvalidDataException($"Unsupported STEI schema version: {m.SchemaVersion}.");
         if (!string.Equals(m.EncryptionAlgorithm, "AES-256-GCM", StringComparison.Ordinal)) throw new CryptographicException("Unsupported STEI encryption.");
         if (!string.Equals(m.SignatureAlgorithm, "RSA-PSS-SHA256", StringComparison.Ordinal)) throw new CryptographicException("Unsupported STEI signature algorithm.");
     }
