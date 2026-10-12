@@ -387,7 +387,7 @@ namespace ShouTech.App
 
             try
             {
-                AppHost.Logging.LogLifecycle(
+                AppHost.Logging?.LogLifecycle(
                     "Application startup",
                     $"Args={e.Args.Length}; BaseDirectory={AppDomain.CurrentDomain.BaseDirectory}");
             }
