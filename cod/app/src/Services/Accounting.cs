@@ -312,6 +312,30 @@ internal static class AccRepo
         using var command = connection.CreateCommand();
         command.CommandText = DatabaseRuntime.IsPostgreSql() ? SchemaPostgres : SchemaSqlite;
         command.ExecuteNonQuery();
+        EnsureColumn(connection, "accounts", "deleted_at", DatabaseRuntime.IsPostgreSql() ? "TIMESTAMPTZ" : "TEXT");
+        EnsureColumn(connection, "accounts", "deleted_by", "TEXT");
+    }
+
+    private static void EnsureColumn(DbConnection connection, string table, string column, string type)
+    {
+        if (DatabaseRuntime.IsPostgreSql())
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = $"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {type};";
+            command.ExecuteNonQuery();
+            return;
+        }
+
+        using (var check = connection.CreateCommand())
+        {
+            check.CommandText = $"SELECT COUNT(1) FROM pragma_table_info('{table}') WHERE name = '{column}';";
+            if (Convert.ToInt32(check.ExecuteScalar(), CultureInfo.InvariantCulture) > 0)
+                return;
+        }
+
+        using var alter = connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {type};";
+        alter.ExecuteNonQuery();
     }
 
     public static List<AccRec> LoadAll()
@@ -502,11 +526,12 @@ internal static class AccRepo
             var activeValue = DatabaseRuntime.IsPostgreSql() ? "FALSE" : "0";
             command.CommandText = $"""
                 UPDATE accounts
-                SET is_deleted={deletedValue}
+                SET is_deleted={deletedValue}, deleted_at=CURRENT_TIMESTAMP, deleted_by=$deletedBy
                 WHERE company_id=$company AND account_id=$id AND is_deleted={activeValue};
                 """;
             Add(command, "$company", AppState.CurrentCompanyCode ?? string.Empty);
             Add(command, "$id", account.Id);
+            Add(command, "$deletedBy", AppState.CurrentUser?.Username);
             if (command.ExecuteNonQuery() != 1)
                 throw new InvalidOperationException("تعذر نقل الحساب إلى سلة المحذوفات لأنه لم يعد موجودًا في الشركة الحالية.");
 
