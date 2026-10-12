@@ -29,7 +29,7 @@ public partial class BinWin : Window
         }
     }
 
-    private bool IsArabic => (App.CurrentLanguageCode ?? "en").StartsWith("ar", StringComparison.OrdinalIgnoreCase);
+    private static bool IsArabic => (App.CurrentLanguageCode ?? "en").StartsWith("ar", StringComparison.OrdinalIgnoreCase);
     private string L(string en, string ar) => IsArabic ? ar : en;
 
     private void ApplyLanguage()
