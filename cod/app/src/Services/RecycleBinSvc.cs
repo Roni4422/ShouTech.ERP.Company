@@ -504,10 +504,18 @@ public static class RecycleBinSvc
         // SQLite-level guardrail: capture company-scoped soft and hard deletes even when
         // a legacy screen bypasses RecycleBinSvc. App handlers should still call
         // RecordDeletionAsync to provide the authenticated actor and the user's reason.
-        if (connection is SqliteConnection)
-            await EnsureSqliteDeletionTriggersAsync(connection, cancellationToken).ConfigureAwait(false);
-        else if (connection is NpgsqlConnection)
-            await EnsurePostgresDeletionTriggersAsync(connection, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (connection is SqliteConnection)
+                await EnsureSqliteDeletionTriggersAsync(connection, cancellationToken).ConfigureAwait(false);
+            else if (connection is NpgsqlConnection)
+                await EnsurePostgresDeletionTriggersAsync(connection, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Auditing must never prevent ordinary reads/writes if a provider lacks DDL privileges.
+            LogWarning($"Database delete-audit trigger installation was incomplete: {ex.Message}");
+        }
     }
 
     private static async Task EnsurePostgresDeletionTriggersAsync(
