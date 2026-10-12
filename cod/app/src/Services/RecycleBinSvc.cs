@@ -480,11 +480,118 @@ public static class RecycleBinSvc
 
     private static async Task EnsureDeletionAuditTableAsync(DbConnection connection, CancellationToken cancellationToken)
     {
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "CREATE TABLE IF NOT EXISTS deletion_audit_log (" +
+                "event_id TEXT PRIMARY KEY, company_code TEXT NOT NULL, table_name TEXT NOT NULL, " +
+                "record_key TEXT NOT NULL, action_type TEXT NOT NULL, actor TEXT NOT NULL, " +
+                "occurred_at TEXT NOT NULL, method TEXT NOT NULL, reason TEXT, record_snapshot TEXT)";
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // SQLite-level guardrail: capture company-scoped soft and hard deletes even when
+        // a legacy screen bypasses RecycleBinSvc. App handlers should still call
+        // RecordDeletionAsync to provide the authenticated actor and the user's reason.
+        if (connection is SqliteConnection)
+            await EnsureSqliteDeletionTriggersAsync(connection, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task EnsureSqliteDeletionTriggersAsync(
+        DbConnection connection, CancellationToken cancellationToken)
+    {
+        var tables = await GetTableNamesAsync(connection, cancellationToken).ConfigureAwait(false);
+        foreach (var table in tables)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (table.Equals("deletion_audit_log", StringComparison.OrdinalIgnoreCase) ||
+                table.StartsWith("sqlite_", StringComparison.OrdinalIgnoreCase) ||
+                !SafeIdentifier.IsMatch(table))
+                continue;
+
+            IReadOnlyList<string> columns;
+            try
+            {
+                columns = await GetColumnNamesAsync(connection, table, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                LogWarning($"Audit trigger skipped for '{table}': {ex.Message}");
+                continue;
+            }
+
+            var companyColumn = FindColumn(columns, "company_id") ?? FindColumn(columns, "companyid");
+            var primaryKey = InferPrimaryKey(table, columns);
+            if (companyColumn is null || primaryKey is null)
+                continue;
+
+            var deletedByColumn = FindColumn(columns, "deleted_by");
+            var snapshotNew = BuildSqliteSnapshot(columns, "NEW");
+            var snapshotOld = BuildSqliteSnapshot(columns, "OLD");
+            var companyNew = $"CAST(NEW.{Quote(companyColumn)} AS TEXT)";
+            var companyOld = $"CAST(OLD.{Quote(companyColumn)} AS TEXT)";
+            var keyNew = $"CAST(NEW.{Quote(primaryKey)} AS TEXT)";
+            var keyOld = $"CAST(OLD.{Quote(primaryKey)} AS TEXT)";
+            var actorNew = deletedByColumn is null
+                ? "'database-trigger'"
+                : $"COALESCE(CAST(NEW.{Quote(deletedByColumn)} AS TEXT), 'database-trigger')";
+            var tableLiteral = table.Replace("'", "''", StringComparison.Ordinal);
+
+            if (FindColumn(columns, "is_deleted") is { } softDeleteColumn)
+            {
+                var triggerName = Quote("trg_audit_soft_delete_" + table);
+                await ExecuteSqliteAuditDdlAsync(connection, $"""
+                    CREATE TRIGGER IF NOT EXISTS {triggerName}
+                    AFTER UPDATE OF {Quote(softDeleteColumn)} ON {Quote(table)}
+                    WHEN COALESCE(OLD.{Quote(softDeleteColumn)}, 0) = 0
+                         AND COALESCE(NEW.{Quote(softDeleteColumn)}, 0) <> 0
+                    BEGIN
+                        INSERT INTO deletion_audit_log
+                            (event_id, company_code, table_name, record_key, action_type, actor,
+                             occurred_at, method, reason, record_snapshot)
+                        VALUES
+                            (lower(hex(randomblob(16))), {companyNew}, '{tableLiteral}', {keyNew},
+                             'DELETE', {actorNew}, strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+                             'SOFT_DELETE_TRIGGER',
+                             'Captured by database trigger; caller did not provide a reason',
+                             {snapshotNew});
+                    END;
+                    """, cancellationToken).ConfigureAwait(false);
+            }
+
+            var hardDeleteTrigger = Quote("trg_audit_hard_delete_" + table);
+            await ExecuteSqliteAuditDdlAsync(connection, $"""
+                CREATE TRIGGER IF NOT EXISTS {hardDeleteTrigger}
+                AFTER DELETE ON {Quote(table)}
+                BEGIN
+                    INSERT INTO deletion_audit_log
+                        (event_id, company_code, table_name, record_key, action_type, actor,
+                         occurred_at, method, reason, record_snapshot)
+                    VALUES
+                        (lower(hex(randomblob(16))), {companyOld}, '{tableLiteral}', {keyOld},
+                         'DELETE', 'database-trigger', strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+                         'HARD_DELETE_TRIGGER',
+                         'Captured by database trigger; caller did not provide a reason',
+                         {snapshotOld});
+                END;
+                """, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static string BuildSqliteSnapshot(IReadOnlyList<string> columns, string rowAlias)
+    {
+        var pairs = columns.SelectMany(column => new[]
+        {
+            "'" + column.Replace("'", "''", StringComparison.Ordinal) + "'",
+            $"{rowAlias}.{Quote(column)}"
+        });
+        return "json_object(" + string.Join(", ", pairs) + ")";
+    }
+
+    private static async Task ExecuteSqliteAuditDdlAsync(
+        DbConnection connection, string sql, CancellationToken cancellationToken)
+    {
         await using var command = connection.CreateCommand();
-        command.CommandText = "CREATE TABLE IF NOT EXISTS deletion_audit_log (" +
-            "event_id TEXT PRIMARY KEY, company_code TEXT NOT NULL, table_name TEXT NOT NULL, " +
-            "record_key TEXT NOT NULL, action_type TEXT NOT NULL, actor TEXT NOT NULL, " +
-            "occurred_at TEXT NOT NULL, method TEXT NOT NULL, reason TEXT, record_snapshot TEXT)";
+        command.CommandText = sql;
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
