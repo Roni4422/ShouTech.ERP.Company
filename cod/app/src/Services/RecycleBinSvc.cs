@@ -170,6 +170,14 @@ public static class RecycleBinSvc
 
             var deletedAtColumn = FindColumn(columns, "deleted_at");
             var isActiveColumn = FindColumn(columns, "is_active");
+            var companyColumn = FindColumn(columns, "company_id") ?? FindColumn(columns, "companyid");
+            var definition = Catalog.First(entry => entry.TableName.Equals(item.TableName, StringComparison.OrdinalIgnoreCase));
+            var statusColumn = definition.DraftOnly ? FindColumn(columns, "status") : null;
+            if (definition.DraftOnly && statusColumn is null)
+                return Failed(item, "Draft status is unavailable; this document cannot be restored from the bin.");
+            var companyValue = definition.CompanyIdIsCode
+                ? item.CompanyCode
+                : await FindCompanyIdAsync(connection, item.CompanyCode, cancellationToken).ConfigureAwait(false);
             var primaryKeyColumn = ResolveExistingColumn(columns, item.PrimaryKeyColumn);
 
             await using var command = connection.CreateCommand();
@@ -179,10 +187,26 @@ public static class RecycleBinSvc
             if (isActiveColumn is not null)
                 assignments.Add($"{Quote(isActiveColumn)} = 1");
 
+            var predicates = new List<string>
+            {
+                $"{Quote(primaryKeyColumn)} = @primaryKey",
+                $"{Quote(softDeleteColumn)} = 1"
+            };
+            if (companyColumn is not null)
+            {
+                if (companyValue is null)
+                    return Failed(item, "Company could not be resolved; restore was blocked.");
+                predicates.Add($"{Quote(companyColumn)} = @companyValue");
+                AddParameter(command, "@companyValue", companyValue);
+            }
+            if (definition.DraftOnly)
+            {
+                predicates.Add($"{Quote(statusColumn!)} = @draftStatus");
+                AddParameter(command, "@draftStatus", "Draft");
+            }
             command.CommandText =
                 $"UPDATE {Quote(item.TableName)} SET {string.Join(", ", assignments)} " +
-                $"WHERE {Quote(primaryKeyColumn)} = @primaryKey " +
-                $"AND {Quote(softDeleteColumn)} = 1";
+                $"WHERE {string.Join(" AND ", predicates)}";
 
             AddParameter(command, "@primaryKey", CoercePrimaryKey(item.PrimaryKeyValue));
 
@@ -231,22 +255,34 @@ public static class RecycleBinSvc
             var columns = await GetColumnNamesAsync(connection, item.TableName, cancellationToken)
                 .ConfigureAwait(false);
             var softDeleteColumn = FindColumn(columns, "is_deleted");
+            var companyColumn = FindColumn(columns, "company_id") ?? FindColumn(columns, "companyid");
+            var definition = Catalog.First(entry => entry.TableName.Equals(item.TableName, StringComparison.OrdinalIgnoreCase));
+            var statusColumn = definition.DraftOnly ? FindColumn(columns, "status") : null;
+            if (definition.DraftOnly && statusColumn is null)
+                return Failed(item, "Draft status is unavailable; permanent deletion was blocked.");
+            var companyValue = definition.CompanyIdIsCode
+                ? item.CompanyCode
+                : await FindCompanyIdAsync(connection, item.CompanyCode, cancellationToken).ConfigureAwait(false);
             var primaryKeyColumn = ResolveExistingColumn(columns, item.PrimaryKeyColumn);
 
             await using var command = connection.CreateCommand();
+            var predicates = new List<string> { $"{Quote(primaryKeyColumn)} = @primaryKey" };
             if (softDeleteColumn is not null)
+                predicates.Add($"{Quote(softDeleteColumn)} = 1");
+            if (companyColumn is not null)
             {
-                command.CommandText =
-                    $"DELETE FROM {Quote(item.TableName)} " +
-                    $"WHERE {Quote(primaryKeyColumn)} = @primaryKey " +
-                    $"AND {Quote(softDeleteColumn)} = 1";
+                if (companyValue is null)
+                    return Failed(item, "Company could not be resolved; permanent deletion was blocked.");
+                predicates.Add($"{Quote(companyColumn)} = @companyValue");
+                AddParameter(command, "@companyValue", companyValue);
             }
-            else
+            if (definition.DraftOnly)
             {
-                command.CommandText =
-                    $"DELETE FROM {Quote(item.TableName)} " +
-                    $"WHERE {Quote(primaryKeyColumn)} = @primaryKey";
+                predicates.Add($"{Quote(statusColumn!)} = @draftStatus");
+                AddParameter(command, "@draftStatus", "Draft");
             }
+            command.CommandText =
+                $"DELETE FROM {Quote(item.TableName)} WHERE {string.Join(" AND ", predicates)}";
 
             AddParameter(command, "@primaryKey", CoercePrimaryKey(item.PrimaryKeyValue));
 
