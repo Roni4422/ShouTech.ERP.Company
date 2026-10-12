@@ -30,7 +30,7 @@
 
         <TabControl x:Name="ModeTabs" Grid.Row="2" Style="{DynamicResource VisuTabControlStyle}" Margin="0,8,0,10" SelectionChanged="ModeTabs_SelectionChanged">
             <TabItem x:Name="ImportTab" Header="Import Data">
-                <StackPanel>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
                 <Grid Margin="8,10,8,6">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -62,7 +62,7 @@
                 </Grid>
                 <TextBlock x:Name="ImportPackageInfoLabel" Margin="8,8,8,3" FontWeight="SemiBold" Text="Encrypted package details"/>
                 <TextBox x:Name="ImportPackageInfoBox" Margin="8,0,8,0" Height="92" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="7" BorderBrush="{DynamicResource BorderBrush}" Background="{DynamicResource BackgroundBrush}" Text="Choose a .stei file and enter its password, then read package details."/>
-                </StackPanel>
+                </StackPanel></ScrollViewer>
             </TabItem>
             <TabItem x:Name="ExportTab" Header="Export Data">
                 <StackPanel>
