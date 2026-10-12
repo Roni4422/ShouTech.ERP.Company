@@ -529,6 +529,18 @@ internal static class SteiSvc
                     }
                 }
 
+                var requiredColumns = await GetRequiredColumnsAsync(db, provider, pair.Key, ct);
+                var missingRequiredFields = requiredColumns
+                    .Where(required => !pair.Value.All(row => row.TryGetValue(required, out var value) &&
+                        value.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined))
+                    .ToArray();
+                if (missingRequiredFields.Length > 0)
+                {
+                    failedTables++;
+                    errors.Add($"{pair.Key}: required database fields are missing or null: {string.Join(", ", missingRequiredFields)}.");
+                    continue;
+                }
+
                 var seenKeys = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var row in pair.Value)
                 {
@@ -905,6 +917,39 @@ internal static class SteiSvc
             for (var i = 0; i < primaryKeys.Count; i++) AddParameter(update, "@k" + i, values[i] ?? DBNull.Value);
             await update.ExecuteNonQueryAsync(ct);
         }
+    }
+
+    private static async Task<List<string>> GetRequiredColumnsAsync(
+        DbConnection db, string provider, string table, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand();
+        if (DatabaseRuntime.IsSqlite(provider))
+        {
+            cmd.CommandText = "PRAGMA table_info(" + Quote(table) + ");";
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            var required = new List<string>();
+            while (await reader.ReadAsync(ct))
+            {
+                var name = reader.GetString(1);
+                var notNull = Convert.ToInt32(reader.GetValue(3), CultureInfo.InvariantCulture) != 0;
+                var hasDefault = !reader.IsDBNull(4);
+                var isPrimaryKey = Convert.ToInt32(reader.GetValue(5), CultureInfo.InvariantCulture) > 0;
+                if (notNull && !hasDefault && !isPrimaryKey) required.Add(name);
+            }
+            return required;
+        }
+
+        cmd.CommandText = @"SELECT column_name
+FROM information_schema.columns
+WHERE table_schema='public' AND table_name=@table
+  AND is_nullable='NO' AND column_default IS NULL
+  AND is_identity='NO' AND is_generated='NEVER'
+ORDER BY ordinal_position;";
+        AddParameter(cmd, "@table", table);
+        await using var pgReader = await cmd.ExecuteReaderAsync(ct);
+        var result = new List<string>();
+        while (await pgReader.ReadAsync(ct)) result.Add(pgReader.GetString(0));
+        return result;
     }
 
     private static async Task<List<string>> GetPrimaryKeyColumnsAsync(
