@@ -706,10 +706,10 @@ public static class DataExportSvc
                 cmd.Parameters.Add(p);
             }
             predicates.Add($"{QuoteIdentifier(companyColumn!)} = @companyId");
-            var companyParameter = cmd.CreateParameter();
-            companyParameter.ParameterName = "@companyId";
-            companyParameter.Value = companyId;
-            cmd.Parameters.Add(companyParameter);
+            var removeCompanyParameter = cmd.CreateParameter();
+            removeCompanyParameter.ParameterName = "@companyId";
+            removeCompanyParameter.Value = companyId;
+            cmd.Parameters.Add(removeCompanyParameter);
 
             {
                 var deletedByCol = columns.FirstOrDefault(c => c.Equals("deleted_by", StringComparison.OrdinalIgnoreCase));
