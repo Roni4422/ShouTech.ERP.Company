@@ -1070,11 +1070,11 @@ ORDER BY kcu.ordinal_position;";
         if (selected.Count == 0) return;
         var names = string.Join(",", selected.Select(Quote));
         var pars = string.Join(",", selected.Select((_, i) => "@p" + i));
-        var prefix = DatabaseRuntime.IsSqlite(provider) ? "INSERT OR IGNORE" : "INSERT";
-        var suffix = DatabaseRuntime.IsPostgreSql(provider) ? " ON CONFLICT DO NOTHING" : "";
+        // Suppress duplicate-key conflicts only; do not hide NOT NULL or other data errors.
+        var suffix = " ON CONFLICT DO NOTHING";
         await using var cmd = db.CreateCommand();
         cmd.Transaction = tx;
-        cmd.CommandText = $"{prefix} INTO {Quote(table)} ({names}) VALUES ({pars}){suffix};";
+        cmd.CommandText = $"INSERT INTO {Quote(table)} ({names}) VALUES ({pars}){suffix};";
         for (var i = 0; i < selected.Count; i++) AddParameter(cmd, "@p" + i, FromJson(row[selected[i]]));
         await cmd.ExecuteNonQueryAsync(ct);
     }
