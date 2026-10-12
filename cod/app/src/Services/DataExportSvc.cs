@@ -238,9 +238,50 @@ public static class DataExportSvc
 
         await using var connection = CreateConnection();
         await connection.OpenAsync(ct);
-        var sql = $"SELECT * FROM {QuoteIdentifier(option.TableName)}{BuildFilter(option)}";
+
+        // Dataset exports must be scoped to the active company. Never fall back
+        // to exporting every company's rows when the company mapping fails.
+        var tableColumns = await GetColumnNamesAsync(connection, option.TableName, ct);
+        var companyColumn = tableColumns.FirstOrDefault(column =>
+            column.Equals("company_id", StringComparison.OrdinalIgnoreCase) ||
+            column.Equals("companyid", StringComparison.OrdinalIgnoreCase));
+        var filter = BuildFilter(option);
+        object? companyScope = null;
+
+        if (companyColumn != null)
+        {
+            companyScope = IsCompanyCodeScopedTable(option.TableName)
+                ? companyCode.Trim()
+                : await FindCompanyIdAsync(connection, companyCode, ct);
+            if (companyScope is null || string.IsNullOrWhiteSpace(Convert.ToString(companyScope, CultureInfo.InvariantCulture)))
+                throw new InvalidOperationException("The active company could not be matched to the current database. Export was stopped to prevent cross-company data exposure.");
+
+            filter = AddAndCondition(filter,
+                $"CAST({QuoteIdentifier(companyColumn)} AS TEXT)=CAST(@companyScope AS TEXT)");
+        }
+        else if (option.TableName.Equals("pos_transaction_items", StringComparison.OrdinalIgnoreCase))
+        {
+            companyScope = await FindCompanyIdAsync(connection, companyCode, ct);
+            if (companyScope is null)
+                throw new InvalidOperationException("The active company could not be matched to the current database.");
+            filter = AddAndCondition(filter,
+                "pos_transaction_id IN (SELECT pos_transaction_id FROM pos_transactions WHERE CAST(company_id AS TEXT)=CAST(@companyScope AS TEXT))");
+        }
+        else if (!IsCompanyIndependent(option.TableName))
+        {
+            throw new InvalidOperationException(
+                $"Dataset '{option.Key}' has no company field and cannot be safely scoped to the active company. Export was stopped.");
+        }
+
         await using var command = connection.CreateCommand();
-        command.CommandText = sql;
+        command.CommandText = $"SELECT * FROM {QuoteIdentifier(option.TableName)}{filter}";
+        if (companyScope != null)
+        {
+            var companyParameter = command.CreateParameter();
+            companyParameter.ParameterName = "@companyScope";
+            companyParameter.Value = companyScope;
+            command.Parameters.Add(companyParameter);
+        }
         await using var reader = await command.ExecuteReaderAsync(ct);
 
         var fields = Enumerable.Range(0, reader.FieldCount)
@@ -329,6 +370,9 @@ public static class DataExportSvc
                 throw new InvalidOperationException("The selected dataset cannot be imported.");
 
             var sheet = ReadExcelSheet(path);
+            if (replaceMode && !sheet.Rows.Any(row => row.Any(cell => !string.IsNullOrWhiteSpace(cell))))
+                throw new InvalidDataException("Replace mode cannot use an empty workbook because it would soft-delete every active row for the company. Include at least one data row or use Upsert mode.");
+
             var markerIndexes = sheet.Headers
                 .Select((header, index) => (header, index))
                 .Where(x => x.header.StartsWith(DatasetIdentityPrefix, StringComparison.Ordinal))
@@ -1225,6 +1269,11 @@ public static class DataExportSvc
                 $"Company '{companyCode}' is not registered in the current database. Verify that the selected company and database belong together, or run the company/database initialization step.");
         return value;
     }
+
+    private static string AddAndCondition(string filter, string condition)
+        => string.IsNullOrWhiteSpace(filter)
+            ? " WHERE " + condition
+            : filter + " AND " + condition;
 
     private static string BuildFilter(DataExportOption option)
     {
