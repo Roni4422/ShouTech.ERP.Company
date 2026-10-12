@@ -512,6 +512,12 @@ internal static class SteiSvc
                     var companyColumn = columns.FirstOrDefault(c =>
                         c.Equals("company_id", StringComparison.OrdinalIgnoreCase) ||
                         c.Equals("companyid", StringComparison.OrdinalIgnoreCase));
+                    if (pair.Value.Count == 0)
+                    {
+                        failedTables++;
+                        errors.Add($"Replace mode cannot import an empty dataset for '{pair.Key}', because that could soft-delete every active row for the company.");
+                        continue;
+                    }
                     if (!columns.Contains("is_deleted", StringComparer.OrdinalIgnoreCase) ||
                         companyColumn == null || pair.Value.Any(row => !row.ContainsKey(companyColumn)))
                     {
