@@ -24,13 +24,13 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Restore tests and application
-        run: dotnet restore tests/Kern.Tests/Kern.Tests.csproj
+        run: dotnet restore tests/Kern.Tests/Kern.Tests.csproj --verbosity minimal
 
       - name: Build application and tests
-        run: dotnet build tests/Kern.Tests/Kern.Tests.csproj --configuration Release --no-restore
+        run: dotnet build tests/Kern.Tests/Kern.Tests.csproj --configuration Release --no-restore --verbosity normal
 
       - name: Run tests
-        run: dotnet test tests/Kern.Tests/Kern.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=tests.trx"
+        run: dotnet test tests/Kern.Tests/Kern.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=tests.trx" --verbosity normal
 
       - name: Upload test results
         if: always()
