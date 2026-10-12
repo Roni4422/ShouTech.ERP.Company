@@ -782,7 +782,6 @@
                                Stretch="Uniform"
                                RenderOptions.BitmapScalingMode="HighQuality"
                                Source="pack://application:,,,/Resources/Ico/ArchiveBin.png"/>
-               </Border>
                     </Grid>
                 </Button>
             </Canvas>
