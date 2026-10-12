@@ -50,11 +50,11 @@
                   BorderBrush="{DynamicResource ShellContentBorderBrush}"
                   BorderThickness="1">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="Dataset" Binding="{Binding DatasetKey}" Width="120"/>
-                <DataGridTextColumn Header="Label" Binding="{Binding DisplayLabel}" Width="*"/>
-                <DataGridTextColumn Header="Table" Binding="{Binding TableName}" Width="130"/>
-                <DataGridTextColumn Header="Deleted at" Binding="{Binding DeletedAt}" Width="150"/>
-                <DataGridTextColumn Header="Deleted by" Binding="{Binding DeletedBy}" Width="110"/>
+                <DataGridTextColumn x:Name="DatasetColumn" Header="Dataset" Binding="{Binding DatasetKey}" Width="120"/>
+                <DataGridTextColumn x:Name="LabelColumn" Header="Label" Binding="{Binding DisplayLabel}" Width="*"/>
+                <DataGridTextColumn x:Name="TableColumn" Header="Table" Binding="{Binding TableName}" Width="130"/>
+                <DataGridTextColumn x:Name="DeletedAtColumn" Header="Deleted at" Binding="{Binding DeletedAt}" Width="150"/>
+                <DataGridTextColumn x:Name="DeletedByColumn" Header="Deleted by" Binding="{Binding DeletedBy}" Width="110"/>
             </DataGrid.Columns>
         </DataGrid>
 
