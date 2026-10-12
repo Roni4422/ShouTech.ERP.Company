@@ -637,6 +637,10 @@ public static class DataExportSvc
 
         var columns = await GetColumnNamesAsync(connection, table, ct);
         var softCol = columns.FirstOrDefault(c => c.Equals("is_deleted", StringComparison.OrdinalIgnoreCase));
+        if (softCol is null)
+            throw new InvalidOperationException(
+                $"Replace mode cannot remove missing rows from '{table}' because the table does not support soft deletion. Use upsert mode instead.");
+
         var deletedAtCol = columns.FirstOrDefault(c => c.Equals("deleted_at", StringComparison.OrdinalIgnoreCase));
         var keep = new HashSet<string>(keepKeys, StringComparer.Ordinal);
 
@@ -652,8 +656,7 @@ public static class DataExportSvc
             p.Value = companyId;
             select.Parameters.Add(p);
         }
-        if (softCol != null)
-            where.Add($"{QuoteIdentifier(softCol)} = 0");
+        where.Add($"{QuoteIdentifier(softCol)} = {(DatabaseRuntime.IsPostgreSql() ? "FALSE" : "0")}");
 
         select.CommandText =
             $"SELECT {keySelect} FROM {QuoteIdentifier(table)}" +
@@ -700,10 +703,12 @@ public static class DataExportSvc
                 cmd.Parameters.Add(p);
             }
 
-            if (softCol != null)
             {
                 var deletedByCol = columns.FirstOrDefault(c => c.Equals("deleted_by", StringComparison.OrdinalIgnoreCase));
-                var sets = new List<string> { $"{QuoteIdentifier(softCol)} = 1" };
+                var sets = new List<string>
+                {
+                    $"{QuoteIdentifier(softCol)} = {(DatabaseRuntime.IsPostgreSql() ? "TRUE" : "1")}"
+                };
                 if (deletedAtCol != null)
                     sets.Add($"{QuoteIdentifier(deletedAtCol)} = @deletedAt");
                 if (deletedByCol != null)
@@ -711,7 +716,7 @@ public static class DataExportSvc
                 // Prefer inactive when column exists so working lists stay clean.
                 var isActiveCol = columns.FirstOrDefault(c => c.Equals("is_active", StringComparison.OrdinalIgnoreCase));
                 if (isActiveCol != null)
-                    sets.Add($"{QuoteIdentifier(isActiveCol)} = 0");
+                    sets.Add($"{QuoteIdentifier(isActiveCol)} = {(DatabaseRuntime.IsPostgreSql() ? "FALSE" : "0")}");
 
                 cmd.CommandText =
                     $"UPDATE {QuoteIdentifier(table)} SET {string.Join(", ", sets)} WHERE {string.Join(" AND ", predicates)}";
@@ -729,10 +734,6 @@ public static class DataExportSvc
                     pBy.Value = AppState.CurrentUser?.Username ?? AppState.CurrentUser?.FullName ?? "system";
                     cmd.Parameters.Add(pBy);
                 }
-            }
-            else
-            {
-                cmd.CommandText = $"DELETE FROM {QuoteIdentifier(table)} WHERE {string.Join(" AND ", predicates)}";
             }
 
             deleted += await cmd.ExecuteNonQueryAsync(ct);
