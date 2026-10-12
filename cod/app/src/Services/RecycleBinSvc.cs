@@ -207,7 +207,6 @@ public static class RecycleBinSvc
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
             var falseLiteral = DatabaseRuntime.IsPostgreSql() ? "FALSE" : "0";
-            var trueLiteral = DatabaseRuntime.IsPostgreSql() ? "TRUE" : "1";
             var assignments = new List<string> { $"{Quote(softDeleteColumn)} = {falseLiteral}" };
             if (deletedAtColumn is not null)
                 assignments.Add($"{Quote(deletedAtColumn)} = NULL");
