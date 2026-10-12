@@ -387,6 +387,201 @@ public static class InvRepo
         return doc;
     }
 
+
+    /// <summary>Creates a linked credit/return document for a posted invoice without deleting the source.</summary>
+    public static long ReversePostedInvoice(long originalDocId, InvDocKind originalKind, string reason, string userId)
+    {
+        if (originalDocId <= 0) throw new ArgumentOutOfRangeException(nameof(originalDocId));
+        if (string.IsNullOrWhiteSpace(reason)) throw new ArgumentException("A reversal reason is required.", nameof(reason));
+        reason = reason.Trim();
+        if (reason.Length > 1000) throw new ArgumentException("The reversal reason cannot exceed 1000 characters.", nameof(reason));
+
+        var reversalKind = originalKind switch
+        {
+            InvDocKind.SalesInvoice or InvDocKind.PosSale => InvDocKind.SalesReturn,
+            InvDocKind.PurchaseInvoice => InvDocKind.PurchaseReturn,
+            _ => throw new InvalidOperationException("Only posted sales and purchase invoices can be reversed through this workflow.")
+        };
+
+        DocSchema.Ensure();
+        EnsureReversalSchema();
+        var company = Company;
+        if (string.IsNullOrWhiteSpace(company)) throw new InvalidOperationException("No current company is selected.");
+        var original = Load(originalDocId, originalKind)
+            ?? throw new InvalidOperationException("The original invoice was not found in the current company.");
+        if (original.Status != InvDocStatus.Posted) throw new InvalidOperationException("Only posted invoices can be reversed.");
+        if (original.Lines.Count == 0) throw new InvalidOperationException("The invoice has no lines to reverse.");
+        if (HasCompletedReversal(originalDocId, originalKind))
+            throw new InvalidOperationException("This invoice has already been reversed.");
+
+        var cs = DatabaseRuntime.GetConnectionString()
+            ?? throw new InvalidOperationException("No database connection.");
+
+        // The unique reservation blocks concurrent attempts to reverse the same source document.
+        using (var connection = Open(cs))
+        using (var tx = connection.BeginTransaction())
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = """
+                INSERT INTO document_reversals
+                (reversal_id, company_id, original_doc_kind, original_doc_id, reversal_doc_kind,
+                 reversal_doc_id, reason, actor, created_at, status)
+                VALUES ($rid, $company, $originalKind, $originalId, $reversalKind,
+                        NULL, $reason, $actor, $createdAt, 'Pending');
+                """;
+            Add(cmd, "$rid", Guid.NewGuid().ToString("N"));
+            Add(cmd, "$company", company);
+            Add(cmd, "$originalKind", originalKind.ToString());
+            Add(cmd, "$originalId", originalDocId);
+            Add(cmd, "$reversalKind", reversalKind.ToString());
+            Add(cmd, "$reason", reason);
+            Add(cmd, "$actor", string.IsNullOrWhiteSpace(userId) ? Environment.UserName : userId.Trim());
+            Add(cmd, "$createdAt", DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+            try { cmd.ExecuteNonQuery(); }
+            catch (DbException ex)
+            {
+                throw new InvalidOperationException("A reversal is already in progress or has already been recorded for this invoice. Check reversal history before retrying.", ex);
+            }
+            tx.Commit();
+        }
+
+        long reversalId = 0;
+        try
+        {
+            var reversal = new InvDoc
+            {
+                Kind = reversalKind,
+                DocNo = NextDocNo(reversalKind),
+                DocDate = DateTime.Today,
+                PartyId = original.PartyId,
+                PartyCode = original.PartyCode,
+                PartyName = original.PartyName,
+                WarehouseId = original.WarehouseId,
+                CurrencyCode = original.CurrencyCode,
+                ExchangeRate = original.ExchangeRate,
+                TaxCode = original.TaxCode,
+                DefaultTaxRate = original.DefaultTaxRate,
+                Notes = $"Automatic reversal of {original.DocNo} (ID {original.DocId}). Reason: {reason}",
+                Lines = original.Lines.Select(line => new InvLine
+                {
+                    MaterialId = line.MaterialId,
+                    MaterialCode = line.MaterialCode,
+                    Description = line.Description,
+                    Unit = line.Unit,
+                    Qty = line.Qty,
+                    UnitPrice = line.UnitPrice,
+                    DiscountPct = line.DiscountPct,
+                    TaxRate = line.TaxRate,
+                    WarehouseId = line.WarehouseId
+                }).ToList()
+            };
+
+            SaveDraft(reversal);
+            Post(reversal.DocId, reversal.Kind, userId);
+            reversalId = reversal.DocId;
+
+            using var connection = Open(cs);
+            using var tx = connection.BeginTransaction();
+            using var update = connection.CreateCommand();
+            update.Transaction = tx;
+            update.CommandText = """
+                UPDATE document_reversals
+                SET reversal_doc_id=$reversalId, status='Completed'
+                WHERE company_id=$company AND original_doc_kind=$originalKind
+                  AND original_doc_id=$originalId AND status='Pending';
+                """;
+            Add(update, "$reversalId", reversalId);
+            Add(update, "$company", company);
+            Add(update, "$originalKind", originalKind.ToString());
+            Add(update, "$originalId", originalDocId);
+            if (update.ExecuteNonQuery() != 1)
+                throw new InvalidOperationException("The reversal posted, but its audit link could not be finalized. Do not retry; ask an administrator to reconcile the pending reversal.");
+            tx.Commit();
+            return reversalId;
+        }
+        catch (Exception ex)
+        {
+            if (reversalId == 0)
+            {
+                try
+                {
+                    using var connection = Open(cs);
+                    using var cleanup = connection.CreateCommand();
+                    cleanup.CommandText = """
+                        DELETE FROM document_reversals
+                        WHERE company_id=$company AND original_doc_kind=$kind
+                          AND original_doc_id=$id AND status='Pending' AND reversal_doc_id IS NULL;
+                        """;
+                    Add(cleanup, "$company", company);
+                    Add(cleanup, "$kind", originalKind.ToString());
+                    Add(cleanup, "$id", originalDocId);
+                    cleanup.ExecuteNonQuery();
+                }
+                catch { /* Preserve original error for operator review. */ }
+            }
+            throw new InvalidOperationException("Invoice reversal did not complete successfully. Verify the invoice and reversal history before retrying.", ex);
+        }
+    }
+
+    public static bool HasCompletedReversal(long originalDocId, InvDocKind originalKind)
+    {
+        EnsureReversalSchema();
+        var cs = DatabaseRuntime.GetConnectionString();
+        if (string.IsNullOrWhiteSpace(cs)) return false;
+        using var connection = Open(cs);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT COUNT(1) FROM document_reversals
+            WHERE company_id=$company AND original_doc_kind=$kind
+              AND original_doc_id=$id AND status='Completed';
+            """;
+        Add(cmd, "$company", Company);
+        Add(cmd, "$kind", originalKind.ToString());
+        Add(cmd, "$id", originalDocId);
+        return Convert.ToInt32(cmd.ExecuteScalar() ?? 0, CultureInfo.InvariantCulture) > 0;
+    }
+
+    private static void EnsureReversalSchema()
+    {
+        var cs = DatabaseRuntime.GetConnectionString();
+        if (string.IsNullOrWhiteSpace(cs)) throw new InvalidOperationException("No database connection.");
+        using var connection = Open(cs);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = DatabaseRuntime.IsPostgreSql()
+            ? """
+              CREATE TABLE IF NOT EXISTS document_reversals (
+                  reversal_id TEXT PRIMARY KEY,
+                  company_id TEXT NOT NULL,
+                  original_doc_kind TEXT NOT NULL,
+                  original_doc_id BIGINT NOT NULL,
+                  reversal_doc_kind TEXT NOT NULL,
+                  reversal_doc_id BIGINT,
+                  reason TEXT NOT NULL,
+                  actor TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  status TEXT NOT NULL,
+                  UNIQUE (company_id, original_doc_kind, original_doc_id)
+              );
+              """
+            : """
+              CREATE TABLE IF NOT EXISTS document_reversals (
+                  reversal_id TEXT PRIMARY KEY,
+                  company_id TEXT NOT NULL,
+                  original_doc_kind TEXT NOT NULL,
+                  original_doc_id INTEGER NOT NULL,
+                  reversal_doc_kind TEXT NOT NULL,
+                  reversal_doc_id INTEGER,
+                  reason TEXT NOT NULL,
+                  actor TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  status TEXT NOT NULL,
+                  UNIQUE (company_id, original_doc_kind, original_doc_id)
+              );
+              """;
+        cmd.ExecuteNonQuery();
+    }
+
     private static void BindHeader(DbCommand cmd, InvDoc doc)
     {
         Add(cmd, "$company", Company);
