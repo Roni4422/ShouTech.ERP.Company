@@ -388,20 +388,6 @@ namespace ShouTech.App.Views
                 if (RecycleBinCornerButton != null)
                     RecycleBinCornerButton.ToolTip = tooltip;
 
-                if (RecycleBinBadge != null && RecycleBinBadgeText != null)
-                {
-                    if (count <= 0)
-                    {
-                        RecycleBinBadge.Visibility = System.Windows.Visibility.Collapsed;
-                    }
-                    else
-                    {
-                        RecycleBinBadge.Visibility = System.Windows.Visibility.Visible;
-                        RecycleBinBadgeText.Text = count > 99
-                            ? "99+"
-                            : count.ToString(System.Globalization.CultureInfo.CurrentCulture);
-                    }
-                }
             }
             catch
             {
