@@ -93,6 +93,12 @@ internal sealed class SteiManifest
     public string TargetDatabaseProvider { get; set; } = "";
     public string ApplicationVersion { get; set; } = "";
     public string DataScope { get; set; } = "CompanyData";
+    public string OperationId { get; set; } = Guid.NewGuid().ToString("D");
+    public string OperationType { get; set; } = "Export";
+    public string DatasetKey { get; set; } = "";
+    public string DatasetTableName { get; set; } = "";
+    public List<string> DatasetFields { get; set; } = new();
+    public Dictionary<string, string> DatasetFieldTypes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public int TableCount { get; set; }
     public long RowCount { get; set; }
     public string PayloadHash { get; set; } = "";
@@ -114,6 +120,14 @@ internal sealed class SteiPackage
 }
 
 internal sealed record SteiResult(bool Success, bool Partial, long Rows, long FailedRows, int Tables, int FailedTables, IReadOnlyList<string> Errors, string Message);
+
+public sealed record SteiPackageInfo(
+    string FileName, string PackageId, string OperationId, string OperationType,
+    string DataScope, string DatasetKey, string DatasetTableName, IReadOnlyList<string> Fields,
+    IReadOnlyDictionary<string, string> FieldTypes, string ExportedAtLocal, string ExportedByUserId,
+    string ExportedByUserName, string SourceCompanyId, string SourceCompanyCode, string SourceCompanyName,
+    string SourceDatabaseName, string SourceDatabaseProvider, string ApplicationVersion,
+    int FormatVersion, int SchemaVersion, int TableCount, long RowCount, string PayloadHash);
 
     // ========== SteiCrypto.cs ==========
 internal static class SteiCrypto
@@ -276,6 +290,7 @@ internal static class SteiSvc
         string tableName,
         IReadOnlyList<IReadOnlyDictionary<string, object?>> rows,
         IReadOnlyList<string> fields,
+        IReadOnlyDictionary<string, string>? fieldTypes = null,
         IProgress<(long done, long total)>? progress = null,
         CancellationToken ct = default)
     {
@@ -291,6 +306,13 @@ internal static class SteiSvc
         var provider = DatabaseRuntime.GetProvider();
         var manifest = BuildManifest(provider);
         manifest.DataScope = $"Dataset:{datasetKey}";
+        manifest.OperationType = "DatasetExport";
+        manifest.DatasetKey = datasetKey;
+        manifest.DatasetTableName = tableName;
+        manifest.DatasetFields = fields.ToList();
+        manifest.DatasetFieldTypes = fieldTypes is null
+            ? fields.ToDictionary(field => field, _ => "Unknown", StringComparer.OrdinalIgnoreCase)
+            : fields.ToDictionary(field => field, field => fieldTypes.TryGetValue(field, out var type) ? type : "Unknown", StringComparer.OrdinalIgnoreCase);
         var tableRows = rows.Select(row => fields.ToDictionary(
             field => field,
             field => ToJsonElement(row.TryGetValue(field, out var value) ? value : null),
@@ -318,6 +340,38 @@ internal static class SteiSvc
         await WriteContainerAsync(outputPath, manifest, encrypted.Cipher, encrypted.Tag, publicKey, ct);
         progress?.Report((tableRows.Count, tableRows.Count));
         return new SteiResult(true, false, tableRows.Count, 0, 1, 0, Array.Empty<string>(), "Dataset export completed successfully.");
+    }
+
+    public static async Task<SteiPackageInfo> ReadDatasetPackageInfoAsync(
+        string inputPath, string password, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(password))
+            throw new ArgumentException("A package password is required.", nameof(password));
+        var container = await ReadContainerAsync(inputPath, ct);
+        var manifest = container.Manifest;
+        ValidateManifest(manifest);
+        var fingerprint = SteiCrypto.Fingerprint(container.PublicKey);
+        if (!string.Equals(fingerprint, manifest.SigningKeyFingerprint, StringComparison.OrdinalIgnoreCase))
+            throw new CryptographicException("The STEI signing key fingerprint does not match the manifest.");
+        var payload = SteiCrypto.Decrypt(container.Cipher, password,
+            Convert.FromBase64String(manifest.Salt), Convert.FromBase64String(manifest.Nonce), container.Tag);
+        var hash = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
+        if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(hash), Encoding.UTF8.GetBytes(manifest.PayloadHash)))
+            throw new CryptographicException("The STEI payload hash does not match the manifest.");
+        if (!SteiCrypto.Verify(container.PublicKey, BuildSignatureData(manifest, payload), Convert.FromBase64String(manifest.Signature)))
+            throw new CryptographicException("The STEI digital signature is invalid.");
+        var tables = JsonSerializer.Deserialize<Dictionary<string, List<Dictionary<string, JsonElement>>>>(payload)
+            ?? throw new InvalidDataException("The STEI payload is empty or invalid.");
+        var fields = manifest.DatasetFields.Count > 0
+            ? manifest.DatasetFields
+            : tables.Count == 1 ? tables.Values.First().FirstOrDefault()?.Keys.ToList() ?? new List<string>() : new List<string>();
+        return new SteiPackageInfo(Path.GetFileName(inputPath), manifest.PackageId, manifest.OperationId,
+            manifest.OperationType, manifest.DataScope, manifest.DatasetKey, manifest.DatasetTableName,
+            fields, manifest.DatasetFieldTypes, manifest.ExportedLocal, manifest.ExportedByUserId,
+            manifest.ExportedByUserName, manifest.SourceCompanyId, manifest.SourceCompanyCode,
+            manifest.SourceCompanyName, manifest.SourceDatabaseName, manifest.SourceDatabaseProvider,
+            manifest.ApplicationVersion, manifest.FormatVersion, manifest.SchemaVersion,
+            manifest.TableCount, manifest.RowCount, manifest.PayloadHash);
     }
 
     public static Task<SteiResult> ImportDatasetAsync(
