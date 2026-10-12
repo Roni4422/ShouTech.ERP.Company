@@ -186,6 +186,7 @@ public static class RecycleBinSvc
                 return Failed(item, "This table does not support soft-delete restore.");
 
             var deletedAtColumn = FindColumn(columns, "deleted_at");
+            var deletedByColumn = FindColumn(columns, "deleted_by");
             var companyColumn = FindColumn(columns, "company_id") ?? FindColumn(columns, "companyid");
             var definition = Catalog.FirstOrDefault(entry => entry.TableName.Equals(item.TableName, StringComparison.OrdinalIgnoreCase))
                 ?? new BinTableDefinition(item.TableName, HumanizeTableName(item.TableName), [], [item.PrimaryKeyColumn],
@@ -210,6 +211,9 @@ public static class RecycleBinSvc
             var assignments = new List<string> { $"{Quote(softDeleteColumn)} = {falseLiteral}" };
             if (deletedAtColumn is not null)
                 assignments.Add($"{Quote(deletedAtColumn)} = NULL");
+            if (deletedByColumn is not null)
+                assignments.Add($"{Quote(deletedByColumn)} = NULL");
+            // The immutable deletion_audit_log keeps the actor and timestamp history.
             // Do not force reactivation: preserve the record's pre-deletion active state.
 
             var predicates = new List<string>
