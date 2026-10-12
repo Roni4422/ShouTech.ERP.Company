@@ -52,17 +52,6 @@ public static class RecycleBinSvc
         bool DraftOnly = false);
 
     /// <summary>Master-data tables only. Transactional tables are intentionally excluded.</summary>
-    private static readonly string[] TransactionalTableNameTokens =
-    [
-        "voucher", "journal", "ledger", "document", "invoice", "movement", "transaction",
-        "payment", "receipt", "posting", "transfer", "order", "stock", "cash", "bank",
-        "entry", "entries", "line", "detail", "adjustment", "payroll", "production", "batch"
-    ];
-
-    private static bool IsTransactionalTableName(string tableName)
-        => TransactionalTableNameTokens.Any(token =>
-            tableName.Contains(token, StringComparison.OrdinalIgnoreCase));
-
     private static readonly BinTableDefinition[] Catalog =
     [
         new("sales_documents", "Sales invoices",
@@ -744,6 +733,15 @@ public static class RecycleBinSvc
     {
         if (!SafeIdentifier.IsMatch(item.TableName) || !SafeIdentifier.IsMatch(item.PrimaryKeyColumn))
             throw new InvalidOperationException("Invalid identifier in recycle bin item.");
+
+        var definition = Catalog.FirstOrDefault(entry =>
+            entry.TableName.Equals(item.TableName, StringComparison.OrdinalIgnoreCase));
+        if (definition is null)
+            throw new InvalidOperationException("This table is not approved for recycle-bin operations.");
+
+        if (!definition.PrimaryKeyCandidates.Any(candidate =>
+                candidate.Equals(item.PrimaryKeyColumn, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("The selected primary key is not approved for this recycle-bin table.");
     }
 
     private static string? InferPrimaryKey(string tableName, IReadOnlyList<string> columns)
