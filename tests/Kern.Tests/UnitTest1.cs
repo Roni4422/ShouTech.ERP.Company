@@ -132,6 +132,33 @@ namespace Kern.Tests
         }
 
         [Fact]
+        public void SteiSvc_ShouldRemapLegacyCompanyCodesSeparatelyFromCompanyIds()
+        {
+            var steiService = typeof(DataExportSvc).Assembly.GetType("ShouTech.App.Services.SteiSvc")!;
+            var remap = steiService.GetMethod("RemapCompanyId", BindingFlags.Static | BindingFlags.NonPublic)!;
+
+            var legacyRow = new Dictionary<string, System.Text.Json.JsonElement>
+            {
+                ["company_id"] = System.Text.Json.JsonSerializer.SerializeToElement("SRC-CODE")
+            };
+            remap.Invoke(null, new object?[]
+            {
+                legacyRow, "materials", "SRC-ID", "SRC-CODE", "TARGET-ID", "TARGET-CODE"
+            });
+            Assert.Equal("TARGET-CODE", legacyRow["company_id"].GetString());
+
+            var relationalRow = new Dictionary<string, System.Text.Json.JsonElement>
+            {
+                ["company_id"] = System.Text.Json.JsonSerializer.SerializeToElement("SRC-ID")
+            };
+            remap.Invoke(null, new object?[]
+            {
+                relationalRow, "sales_invoices", "SRC-ID", "SRC-CODE", "TARGET-ID", "TARGET-CODE"
+            });
+            Assert.Equal("TARGET-ID", relationalRow["company_id"].GetString());
+        }
+
+        [Fact]
         public void DataExportSvc_ReplaceModeMustRejectRowsWithoutPrimaryKeys()
         {
             var validate = typeof(DataExportSvc).GetMethod(
