@@ -111,6 +111,8 @@ public partial class DatWin : Window
         DatasetPasswordLabel.Text = L("Password", "Package password");
         DatasetPasswordConfirmLabel.Text = L("ConfirmPassword", "Confirm password");
         ImportDatasetLabel.Text = L("DatasetType", "Dataset type");
+        ImportPackageInfoLabel.Text = L("PackageInfo", "Encrypted package details");
+        ReadPackageInfoButton.Content = L("ReadPackageInfo", "Read file info");
         ImportHintText.Text = L("ImportDatasetHint", "Editable Excel data can be imported only with its original encrypted type marker and unchanged column headers.");
         if (ImportModeLabel != null)
             ImportModeLabel.Text = L("ImportModeLabel", "Import mode for master data (e.g. material cards)");
@@ -252,6 +254,7 @@ public partial class DatWin : Window
         }
 
         ImportPathBox.Text = dialog.FileName;
+        ImportPackageInfoBox.Clear();
         var extensionNeedsPassword = string.Equals(extension, ".stei", StringComparison.OrdinalIgnoreCase);
         ImportPasswordGrid.Visibility = extensionNeedsPassword ? Visibility.Visible : Visibility.Collapsed;
         ImportDatasetBox.IsEnabled = true;
@@ -260,6 +263,75 @@ public partial class DatWin : Window
         ResultStatusText.Text = L("Ready", "Ready");
         ResultTextBox.Text = string.Empty;
         DetailsButton.IsEnabled = false;
+    }
+
+    private async void ReadPackageInfo_Click(object sender, RoutedEventArgs e)
+    {
+        var path = ImportPathBox.Text.Trim();
+        var password = ImportPasswordBox.Password;
+        if (string.IsNullOrWhiteSpace(path) || !string.Equals(Path.GetExtension(path), ".stei", StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show(L("SelectSteiForInfo", "Choose an encrypted .stei package first."), Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            MessageBox.Show(L("NoPassword", "Enter the package password."), Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        ReadPackageInfoButton.IsEnabled = false;
+        ImportPackageInfoBox.Text = L("ReadingPackageInfo", "Checking password, integrity, signature and package metadata...");
+        try
+        {
+            var info = await SteiSvc.ReadDatasetPackageInfoAsync(path, password, CancellationToken.None);
+            var isDataset = info.DataScope.StartsWith("Dataset:", StringComparison.Ordinal);
+            var matchedOption = isDataset
+                ? ImportDatasetBox.Items.Cast<object>().OfType<DataExportOption>()
+                    .FirstOrDefault(option => string.Equals(option.Key, info.DatasetKey, StringComparison.Ordinal))
+                : ImportDatasetBox.Items.Cast<object>().OfType<DataExportOption>()
+                    .FirstOrDefault(option => option.Key == "$FullPackage");
+
+            if (matchedOption != null)
+                ImportDatasetBox.SelectedItem = matchedOption;
+
+            var expectedName = matchedOption != null && matchedOption.Key != "$FullPackage"
+                ? Path.GetFileNameWithoutExtension(DataExportSvc.GetDatasetPackageFileName(matchedOption))
+                : string.Empty;
+            var actualName = Path.GetFileNameWithoutExtension(path);
+            var fileNameCheck = !isDataset || string.Equals(actualName, expectedName, StringComparison.OrdinalIgnoreCase)
+                ? L("FileNameCheckOk", "File-name check: passed")
+                : L("FileNameCheckFail", $"File-name check: expected {expectedName}.stei");
+            var fieldLines = info.Fields.Count == 0
+                ? L("NoFieldMetadata", "No field list is recorded in this package.")
+                : string.Join(", ", info.Fields.Select(field =>
+                    info.FieldTypes.TryGetValue(field, out var type) ? $"{field} ({type})" : field));
+            ImportPackageInfoBox.Text = string.Join(Environment.NewLine,
+                $"{L("PackageFile", "File")}: {info.FileName}",
+                $"{L("PackageType", "Data type")}: {(isDataset ? info.DatasetKey : L("FullDatabasePackage", "Full database package"))}",
+                $"{L("PackageTable", "Table")}: {(string.IsNullOrWhiteSpace(info.DatasetTableName) ? "-" : info.DatasetTableName)}",
+                $"{L("PackageOperation", "Operation ID / type")}: {info.OperationId} / {info.OperationType}",
+                $"{L("PackageExportedAt", "Exported at")}: {info.ExportedAtLocal}",
+                $"{L("User", "User")}: {info.ExportedByUserName} (ID: {info.ExportedByUserId})",
+                $"{L("Company", "Source company")}: {info.SourceCompanyName} | {info.SourceCompanyCode} | ID: {info.SourceCompanyId}",
+                $"{L("Database", "Source database")}: {info.SourceDatabaseName} ({info.SourceDatabaseProvider})",
+                $"{L("PackageVersion", "Format / schema version")}: {info.FormatVersion} / {info.SchemaVersion} | {L("Rows", "Rows")}: {info.RowCount} | {L("Tables", "Tables")}: {info.TableCount}",
+                $"{L("PackageId", "Package ID")}: {info.PackageId}",
+                $"{L("PackageIntegrity", "Integrity")}: {L("Verified", "Password, payload hash and signature verified")} | {fileNameCheck}",
+                $"{L("PackageFields", "Fields and types")}: {fieldLines}");
+            if (matchedOption == null)
+                ImportPackageInfoBox.Text += Environment.NewLine + L("DatasetNotAvailable", "The package data type is not available in the current import list.");
+            LogOp("PackageMetadata.Read", $"scope={info.DataScope} | dataset={info.DatasetKey} | rows={info.RowCount} | package={info.PackageId} | user={GetCurrentUserName()}");
+        }
+        catch (Exception ex)
+        {
+            ImportPackageInfoBox.Text = L("PackageMetadataFailed", "Could not verify or read the package metadata.") + Environment.NewLine + ex.Message;
+            LogWarn($"Package metadata inspection failed | file={path} | {ex.Message}");
+        }
+        finally
+        {
+            ReadPackageInfoButton.IsEnabled = true;
+        }
     }
 
     private void ExportBrowse_Click(object sender, RoutedEventArgs e)
