@@ -116,6 +116,22 @@ namespace Kern.Tests
         }
 
         [Fact]
+        public void DataExportSvc_CompanyScopeMustApplyToTheEntireExistingFilter()
+        {
+            var addCondition = typeof(DataExportSvc).GetMethod(
+                "AddAndCondition",
+                BindingFlags.Static | BindingFlags.NonPublic)!;
+
+            var result = (string)addCondition.Invoke(
+                null,
+                new object[] { " WHERE movement_type LIKE '%open%' OR movement_type LIKE '%opening%'", "company_id=@companyScope" })!;
+
+            Assert.Equal(
+                " WHERE (movement_type LIKE '%open%' OR movement_type LIKE '%opening%') AND (company_id=@companyScope)",
+                result);
+        }
+
+        [Fact]
         public void DataExportSvc_ReplaceModeMustRejectRowsWithoutPrimaryKeys()
         {
             var validate = typeof(DataExportSvc).GetMethod(
