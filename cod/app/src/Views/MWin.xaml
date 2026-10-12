@@ -782,26 +782,7 @@
                                Stretch="Uniform"
                                RenderOptions.BitmapScalingMode="HighQuality"
                                Source="pack://application:,,,/Resources/Ico/ArchiveBin.png"/>
-                        <Border x:Name="RecycleBinBadge"
-                                MinWidth="24"
-                                Height="24"
-                                CornerRadius="12"
-                                Background="#FFD32F2F"
-                                BorderBrush="#FFFFFFFF"
-                                BorderThickness="1.5"
-                                HorizontalAlignment="Right"
-                                VerticalAlignment="Top"
-                                Margin="0,2,4,0"
-                                Padding="5,0"
-                                Visibility="Collapsed">
-                            <TextBlock x:Name="RecycleBinBadgeText"
-                                       Text="0"
-                                       Foreground="White"
-                                       FontSize="12"
-                                       FontWeight="Bold"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"/>
-                        </Border>
+               </Border>
                     </Grid>
                 </Button>
             </Canvas>
