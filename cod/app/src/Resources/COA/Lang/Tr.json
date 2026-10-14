@@ -413,7 +413,11 @@
       "Simple": "Basit Genel Hesap Planı",
       "Saudi": "Suudi Hesap Planı",
       "Jordan": "Ürdün Hesap Planı",
-      "EuUs": "AB / ABD Hesap Planı"
+      "EuUs": "AB / ABD Hesap Planı",
+      "S": "Basit Genel Hesap Planı",
+      "SA": "Suudi Hesap Planı",
+      "JO": "Ürdün Hesap Planı",
+      "EU_US": "AB / ABD Hesap Planı"
     }
   },
   "AccountCard": "Hesap Kartı",
