@@ -412,7 +412,11 @@
       "Simple": "Plan comptable général simplifié",
       "Saudi": "Plan comptable saoudien",
       "Jordan": "Plan comptable jordanien",
-      "EuUs": "Plan comptable UE / US"
+      "EuUs": "Plan comptable UE / US",
+      "S": "Plan comptable général simplifié",
+      "SA": "Plan comptable saoudien",
+      "JO": "Plan comptable jordanien",
+      "EU_US": "Plan comptable UE / États-Unis"
     }
   },
   "AccountCard": "Fiche de compte",
