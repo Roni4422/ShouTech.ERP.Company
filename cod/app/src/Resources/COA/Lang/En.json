@@ -412,7 +412,11 @@
       "Simple": "Simple General Chart",
       "Saudi": "Saudi Chart",
       "Jordan": "Jordanian Chart",
-      "EuUs": "EU / US Chart"
+      "EuUs": "EU / US Chart",
+      "S": "Simple General Chart of Accounts",
+      "SA": "Saudi Chart of Accounts",
+      "JO": "Jordanian Chart of Accounts",
+      "EU_US": "EU / US Chart of Accounts"
     }
   },
   "AccountCard": "Account Card",
