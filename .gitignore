@@ -1,0 +1,59 @@
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleasePublic/
+[Rr]eleases/
+x64/
+x86/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+
+# NuGet
+*.nupkg
+*.nuspec
+packages/
+
+# IDE
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+.idea/
+.vs/
+.vscode/
+
+# Generated files
+*.g.cs
+*.g.i.cs
+*.g.vb
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+*.mdf
+*.ldf
+
+# Executables and libraries
+*.dll
+*.exe
+*.pdb
+*.cache
+*.Up2Date
+*.nupkg
+*.nuspec
+
+# Log files
+*.log
+*.txt
+
+# Test output
+TestResults/
+
+# OS files
+.DS_Store
+Thumbs.db
